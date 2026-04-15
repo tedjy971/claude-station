@@ -27,9 +27,9 @@ struct SurfaceInfo {
     }
 
     enum ClaudeIndicator {
-        case running   // ⠐ ⠂ ⠄ ⡀ (spinner = actively processing)
-        case idle      // ✳ (star = waiting at prompt)
-        case none      // plain terminal
+        case running
+        case idle
+        case none
     }
 
     private static let runningPrefixes = ["⠐ ", "⠂ ", "⠄ ", "⡀ ", "⠈ ", "⠁ ", "⠑ ", "⠃ "]
@@ -60,30 +60,34 @@ struct NotificationInfo {
 }
 
 enum CmuxService {
+    private static let cmuxPath = "/Applications/cmux.app/Contents/Resources/bin/cmux"
 
     static func fetchWorkspaces() async -> [WorkspaceInfo] {
-        let output = await ShellExecutor.run("cmux tree --all 2>/dev/null")
+        let output = await ShellExecutor.runArgs(executable: cmuxPath, args: ["tree", "--all"])
         return parseTree(output)
     }
 
     static func fetchNotifications() async -> [NotificationInfo] {
-        let output = await ShellExecutor.run("cmux list-notifications 2>/dev/null")
+        let output = await ShellExecutor.runArgs(executable: cmuxPath, args: ["list-notifications"])
         return parseNotifications(output)
     }
 
     static func getTTYForPID(_ pid: Int) async -> String? {
-        let output = await ShellExecutor.run("ps -p \(pid) -o tty=")
+        let output = await ShellExecutor.runArgs(executable: "/bin/ps", args: ["-p", "\(pid)", "-o", "tty="])
         let tty = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !tty.isEmpty, tty != "??" else { return nil }
         return "tty\(tty)"
     }
 
     static func selectWorkspace(ref: String) async {
-        _ = await ShellExecutor.run("cmux select-workspace --workspace \(ref)")
+        _ = await ShellExecutor.runArgs(executable: cmuxPath, args: ["select-workspace", "--workspace", ref])
     }
 
     static func readScreen(surfaceRef: String, lines: Int = 5) async -> String {
-        let output = await ShellExecutor.run("cmux read-screen --surface \(surfaceRef) --lines \(lines) 2>/dev/null")
+        let output = await ShellExecutor.runArgs(
+            executable: cmuxPath,
+            args: ["read-screen", "--surface", surfaceRef, "--lines", "\(lines)"]
+        )
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -99,10 +103,8 @@ enum CmuxService {
                line.contains("workspace \(wsRef)") {
                 if let ws = current { workspaces.append(ws) }
                 current = WorkspaceInfo(
-                    ref: wsRef,
-                    name: wsName,
-                    isSelected: line.contains("[selected]"),
-                    surfaces: []
+                    ref: wsRef, name: wsName,
+                    isSelected: line.contains("[selected]"), surfaces: []
                 )
             }
 
@@ -110,13 +112,10 @@ enum CmuxService {
                line.contains("[terminal]"),
                let title = line.firstCaptureGroup(of: #"\[terminal\] "([^"]*)""#) {
                 let tty = line.firstCaptureGroup(of: #"tty=(\w+)"#)
-                let indicator = SurfaceInfo.detectIndicator(in: title)
                 let surface = SurfaceInfo(
-                    ref: sRef,
-                    title: title,
-                    tty: tty,
+                    ref: sRef, title: title, tty: tty,
                     isActive: line.contains("◀ active"),
-                    claudeStatus: indicator
+                    claudeStatus: SurfaceInfo.detectIndicator(in: title)
                 )
                 current?.surfaces.append(surface)
             }

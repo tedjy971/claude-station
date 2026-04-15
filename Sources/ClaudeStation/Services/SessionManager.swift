@@ -16,6 +16,7 @@ final class SessionManager {
 
     private var refreshTask: Task<Void, Never>?
     private var fileMonitor: DispatchSourceFileSystemObject?
+    private var isRefreshing = false
     private let sessionsPath = NSString(string: "~/.claude/sessions").expandingTildeInPath
 
     func startMonitoring() {
@@ -40,6 +41,10 @@ final class SessionManager {
     }
 
     func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         async let workspacesResult = CmuxService.fetchWorkspaces()
         async let notificationsResult = CmuxService.fetchNotifications()
 
