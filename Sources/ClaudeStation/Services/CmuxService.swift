@@ -48,8 +48,10 @@ struct NotificationInfo {
     let status: String
     let preview: String
 
-    var isWaiting: Bool { status.contains("Waiting") }
     var isCompleted: Bool { status.contains("Completed") }
+    var needsAttention: Bool {
+        !isCompleted && (status.contains("Waiting") || status.contains("Permission") || status.isEmpty)
+    }
 
     var workspaceHint: String? {
         if let range = status.range(of: "Completed in ") {

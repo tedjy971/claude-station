@@ -67,7 +67,7 @@ final class SessionManager {
                 let session = surface.tty.flatMap { ttyToSession[$0] }
 
                 for (idx, notif) in notifications.enumerated() {
-                    if notif.isWaiting, let hint = notif.workspaceHint,
+                    if notif.needsAttention, let hint = notif.workspaceHint,
                        hint.localizedCaseInsensitiveCompare(ws.name) == .orderedSame {
                         status = .waiting
                         matchedNotifications.insert(idx)
@@ -113,7 +113,7 @@ final class SessionManager {
         // Assign unmatched "Waiting" notifications to agents
         // (cmux "Waiting" notifications don't include workspace name)
         var unmatchedWaitingCount = notifications.enumerated().filter { idx, notif in
-            notif.isWaiting && !matchedNotifications.contains(idx)
+            notif.needsAttention && !matchedNotifications.contains(idx)
         }.count
 
         if unmatchedWaitingCount > 0 {
