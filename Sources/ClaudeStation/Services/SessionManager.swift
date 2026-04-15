@@ -38,7 +38,7 @@ final class SessionManager {
     }
 
     func loadOutput(for agent: AgentSession) async -> String {
-        await CmuxService.readScreen(workspaceRef: agent.workspaceRef, lines: 15)
+        await CmuxService.readScreen(surfaceRef: agent.surfaceRef, lines: 15)
     }
 
     func approveAgent(_ agent: AgentSession) {
@@ -154,10 +154,10 @@ final class SessionManager {
         // NOW load screen output and parse actions for waiting agents
         await withTaskGroup(of: (String, String).self) { group in
             for agent in newAgents {
-                let wsRef = agent.workspaceRef
+                let sRef = agent.surfaceRef
                 let agentId = agent.id
                 group.addTask {
-                    let screen = await CmuxService.readScreen(workspaceRef: wsRef, lines: 30)
+                    let screen = await CmuxService.readScreen(surfaceRef: sRef, lines: 30)
                     return (agentId, screen)
                 }
             }

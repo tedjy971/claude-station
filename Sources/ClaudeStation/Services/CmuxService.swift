@@ -85,12 +85,21 @@ enum CmuxService {
         _ = await ShellExecutor.runArgs(executable: cmuxPath, args: ["select-workspace", "--workspace", ref])
     }
 
-    static func readScreen(workspaceRef: String, lines: Int = 5) async -> String {
+    static func readScreen(surfaceRef: String, lines: Int = 5) async -> String {
+        // Try surface first, fallback to workspace if surface fails
         let output = await ShellExecutor.runArgs(
             executable: cmuxPath,
-            args: ["read-screen", "--workspace", workspaceRef, "--lines", "\(lines)"]
+            args: ["read-screen", "--surface", surfaceRef, "--lines", "\(lines)"]
         )
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+
+        // Fallback: workspace (some surfaces report as non-terminal)
+        let fallback = await ShellExecutor.runArgs(
+            executable: cmuxPath,
+            args: ["read-screen", "--workspace", surfaceRef.replacingOccurrences(of: "surface:", with: "workspace:"), "--lines", "\(lines)"]
+        )
+        return fallback.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func sendText(surfaceRef: String, text: String) async {
