@@ -11,6 +11,8 @@ struct AgentPopoverView: View {
             header
             Divider()
             if manager.agents.isEmpty { emptyState } else { agentList }
+            Divider()
+            footer
         }
         .frame(width: 400)
     }
@@ -42,6 +44,25 @@ struct AgentPopoverView: View {
             Text("No Claude sessions").font(.subheadline).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 24)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Text("⌃⇧A approve")
+                .font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary)
+            Text("⌃⇧D deny")
+                .font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary)
+            Text("⌃⇧V toggle")
+                .font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary)
+            Spacer()
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Text("Quit").font(.caption2).foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
     }
 
     private var agentList: some View {
@@ -150,6 +171,51 @@ struct AgentPopoverView: View {
                         manager.denyAgent(agent)
                     } label: {
                         Label("Deny", systemImage: "xmark")
+                            .font(.system(.caption, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered).tint(.red)
+                    .controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 16).padding(.bottom, 10)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+
+        case let .planReview(content):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.caption).foregroundStyle(.purple)
+                    Text("Plan Review")
+                        .font(.system(.caption, weight: .medium))
+                    Spacer()
+                }
+
+                ScrollView {
+                    Text(content)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 200)
+                .padding(8)
+                .background(Color.primary.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                HStack(spacing: 8) {
+                    Button {
+                        manager.approveAgent(agent)
+                    } label: {
+                        Label("Approve Plan", systemImage: "checkmark")
+                            .font(.system(.caption, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent).tint(.green)
+                    .controlSize(.small)
+
+                    Button {
+                        manager.denyAgent(agent)
+                    } label: {
+                        Label("Reject", systemImage: "xmark")
                             .font(.system(.caption, weight: .semibold))
                     }
                     .buttonStyle(.bordered).tint(.red)

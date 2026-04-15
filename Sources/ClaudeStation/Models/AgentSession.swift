@@ -49,12 +49,14 @@ enum AgentStatus: Int, Comparable {
 enum PendingAction: Equatable {
     case permission(tool: String, detail: String)
     case question(options: [(index: Int, label: String)])
+    case planReview(content: String)
 
     static func == (lhs: PendingAction, rhs: PendingAction) -> Bool {
         switch (lhs, rhs) {
         case let (.permission(t1, d1), .permission(t2, d2)): return t1 == t2 && d1 == d2
         case let (.question(o1), .question(o2)):
             return o1.map(\.index) == o2.map(\.index) && o1.map(\.label) == o2.map(\.label)
+        case let (.planReview(c1), .planReview(c2)): return c1 == c2
         default: return false
         }
     }
@@ -79,6 +81,13 @@ enum PendingAction: Equatable {
                 }
             }
             if options.count >= 2 { return .question(options: options) }
+        }
+
+        // Plan review: detect plan mode
+        if lines.contains(where: { $0.contains("Plan:") || $0.contains("plan mode") || $0.contains("ExitPlanMode") }) {
+            let planContent = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                .suffix(20).joined(separator: "\n")
+            if !planContent.isEmpty { return .planReview(content: planContent) }
         }
 
         // Permission prompt: look for "Allow"
