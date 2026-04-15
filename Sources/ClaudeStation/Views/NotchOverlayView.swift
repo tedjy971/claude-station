@@ -61,11 +61,11 @@ struct NotchOverlayView: View {
                         )
                 }
                 .shadow(
-                    color: glowColor.opacity(breathe ? 0.35 : 0.1),
-                    radius: isHovered ? 20 : 12
+                    color: glowColor.opacity(breathe ? 0.25 : 0.08),
+                    radius: isHovered ? 12 : 8
                 )
         }
-        .scaleEffect(isHovered ? 1.05 : 1.0)
+        .scaleEffect(isHovered ? 1.03 : 1.0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Capsule())
         .onHover { h in withAnimation(DS.snapSpring) { isHovered = h } }

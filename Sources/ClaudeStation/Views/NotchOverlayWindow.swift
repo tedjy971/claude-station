@@ -63,7 +63,7 @@ final class NotchOverlayWindow: NSPanel {
 
     private static func computeFrame(for screen: NSScreen) -> (NSRect, Bool) {
         let width: CGFloat = 460
-        let height: CGFloat = 70
+        let height: CGFloat = 90
         let x = screen.frame.midX - width / 2
 
         // Check for notch: auxiliaryTopLeftArea exists only on notch displays
