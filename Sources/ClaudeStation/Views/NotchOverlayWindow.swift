@@ -5,7 +5,7 @@ final class NotchOverlayWindow: NSPanel {
     private let manager: SessionManager
     private var popover: NSPopover?
     private var screenObserver: Any?
-    private var dragOrigin: NSPoint?
+    private var dragStartOrigin: NSPoint?
 
     private static let savedPositionKey = "capsulePosition"
 
@@ -34,9 +34,11 @@ final class NotchOverlayWindow: NSPanel {
         isMovable = false
 
         let hostView = NSHostingView(
-            rootView: NotchOverlayView(onTap: { [weak self] in
-                self?.togglePopover()
-            }).environment(manager)
+            rootView: NotchOverlayView(
+                onTap: { [weak self] in self?.togglePopover() },
+                onDrag: { [weak self] translation in self?.handleDrag(translation) },
+                onDragEnd: { [weak self] in self?.handleDragEnd() }
+            ).environment(manager)
         )
         hostView.frame = NSRect(origin: .zero, size: frame.size)
         hostView.autoresizingMask = [.width, .height]
@@ -58,30 +60,21 @@ final class NotchOverlayWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    // MARK: - Dragging
+    // MARK: - Dragging (called from SwiftUI)
 
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 {
-            resetToDefault()
-            return
+    private func handleDrag(_ translation: CGSize) {
+        if dragStartOrigin == nil {
+            dragStartOrigin = frame.origin
         }
-        dragOrigin = event.locationInWindow
+        guard let start = dragStartOrigin else { return }
+        let newX = start.x + translation.width
+        let newY = start.y - translation.height  // SwiftUI Y is inverted vs AppKit
+        setFrameOrigin(NSPoint(x: newX, y: newY))
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        guard let origin = dragOrigin else { return }
-        let current = event.locationInWindow
-        let dx = current.x - origin.x
-        let dy = current.y - origin.y
-        var newOrigin = frame.origin
-        newOrigin.x += dx
-        newOrigin.y += dy
-        setFrameOrigin(newOrigin)
+    private func handleDragEnd() {
+        dragStartOrigin = nil
         savePosition()
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        dragOrigin = nil
     }
 
     // MARK: - Position Persistence

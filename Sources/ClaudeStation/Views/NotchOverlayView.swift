@@ -4,7 +4,10 @@ struct NotchOverlayView: View {
     @Environment(SessionManager.self) private var manager
     @State private var isHovered = false
     @State private var breathe = false
+    @State private var isDragging = false
     var onTap: () -> Void = {}
+    var onDrag: ((CGSize) -> Void)?
+    var onDragEnd: (() -> Void)?
 
     private var activeDots: [AgentSession] {
         manager.agents.filter { $0.status == .running || $0.status == .waiting }
@@ -65,11 +68,23 @@ struct NotchOverlayView: View {
                     radius: isHovered ? 12 : 8
                 )
         }
-        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .scaleEffect(isDragging ? 1.08 : (isHovered ? 1.03 : 1.0))
+        .opacity(isDragging ? 0.85 : 1.0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Capsule())
         .onHover { h in withAnimation(DS.snapSpring) { isHovered = h } }
-        .onTapGesture { onTap() }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 5)
+                .onChanged { value in
+                    isDragging = true
+                    onDrag?(value.translation)
+                }
+                .onEnded { _ in
+                    isDragging = false
+                    onDragEnd?()
+                }
+        )
+        .onTapGesture { if !isDragging { onTap() } }
         .onAppear {
             withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
                 breathe = true
