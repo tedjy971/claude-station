@@ -145,38 +145,33 @@ final class NotchOverlayWindow: NSPanel {
     private static func allZoneFrames(screen: NSScreen) -> [(SnapZone, NSRect)] {
         SnapZone.allCases.map { zone in
             let f = frameForZone(zone, screen: screen)
-            // Return a compact indicator rect (centered, smaller)
-            let indicatorW: CGFloat = 80
-            let indicatorH: CGFloat = 30
-            let rect = NSRect(
-                x: f.midX - indicatorW / 2,
-                y: f.midY - indicatorH / 2,
-                width: indicatorW,
-                height: indicatorH
-            )
-            return (zone, rect)
+            return (zone, NSRect(
+                x: f.midX - 60,
+                y: f.midY - 20,
+                width: 120,
+                height: 40
+            ))
         }
     }
 
     private static func frameForZone(_ zone: SnapZone, screen: NSScreen) -> NSRect {
         let w = capsuleWidth
         let h = capsuleHeight
-        let vis = screen.visibleFrame
-        let margin: CGFloat = 10
+        let scr = screen.frame
 
         let x: CGFloat
         let y: CGFloat
 
         switch zone {
-        case .topLeft:     x = vis.minX + margin; y = topY(screen: screen)
-        case .topCenter:   x = screen.frame.midX - w / 2; y = topY(screen: screen)
-        case .topRight:    x = vis.maxX - w - margin; y = topY(screen: screen)
-        case .left:        x = vis.minX + margin; y = vis.midY - h / 2
-        case .center:      x = vis.midX - w / 2; y = vis.midY - h / 2
-        case .right:       x = vis.maxX - w - margin; y = vis.midY - h / 2
-        case .bottomLeft:  x = vis.minX + margin; y = vis.minY + margin
-        case .bottomCenter: x = vis.midX - w / 2; y = vis.minY + margin
-        case .bottomRight: x = vis.maxX - w - margin; y = vis.minY + margin
+        case .topLeft:      x = scr.minX; y = topY(screen: screen)
+        case .topCenter:    x = scr.midX - w / 2; y = topY(screen: screen)
+        case .topRight:     x = scr.maxX - w; y = topY(screen: screen)
+        case .left:         x = scr.minX; y = scr.midY - h / 2
+        case .center:       x = scr.midX - w / 2; y = scr.midY - h / 2
+        case .right:        x = scr.maxX - w; y = scr.midY - h / 2
+        case .bottomLeft:   x = scr.minX; y = scr.minY
+        case .bottomCenter: x = scr.midX - w / 2; y = scr.minY
+        case .bottomRight:  x = scr.maxX - w; y = scr.minY
         }
 
         return NSRect(x: x, y: y, width: w, height: h)
