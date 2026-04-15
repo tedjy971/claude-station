@@ -14,6 +14,7 @@ final class SessionManager {
     var hasWaiting: Bool { waitingCount > 0 || hasUnmatchedWaiting }
     var totalActive: Int { activeAgents.count }
 
+    var hookServer: HookServer?
     private var refreshTask: Task<Void, Never>?
     private var fileMonitor: DispatchSourceFileSystemObject?
     private var isRefreshing = false
@@ -166,7 +167,12 @@ final class SessionManager {
                     let lines = screen.components(separatedBy: "\n")
                     newAgents[idx].lastMessage = lines.suffix(3).joined(separator: "\n")
                     if newAgents[idx].status == .waiting {
-                        newAgents[idx].pendingAction = PendingAction.parse(from: screen)
+                        // Priority: hook data (instant), fallback: screen parsing
+                        if let hookAction = hookServer?.pendingAction(forWorkspace: newAgents[idx].workspaceRef) {
+                            newAgents[idx].pendingAction = hookAction
+                        } else {
+                            newAgents[idx].pendingAction = PendingAction.parse(from: screen)
+                        }
                     }
                 }
             }

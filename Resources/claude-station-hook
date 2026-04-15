@@ -1,0 +1,28 @@
+#!/bin/bash
+# Claude Station Hook — receives Claude Code events via stdin
+# Writes them to ~/.claude-station/events/ for the app to pick up instantly
+
+EVENTS_DIR="$HOME/.claude-station/events"
+mkdir -p "$EVENTS_DIR"
+
+# Read the full JSON from stdin
+INPUT=$(cat)
+
+# Add metadata: timestamp + session info from environment
+TIMESTAMP=$(date +%s%N 2>/dev/null || date +%s)
+
+# Write event file (atomic via temp + mv)
+TMPFILE="$EVENTS_DIR/.tmp-$$"
+cat > "$TMPFILE" <<EOF
+{
+  "timestamp": $TIMESTAMP,
+  "session_id": "${CLAUDE_SESSION_ID:-unknown}",
+  "workspace_id": "${CMUX_WORKSPACE_ID:-}",
+  "surface_id": "${CMUX_SURFACE_ID:-}",
+  "hook_event": $INPUT
+}
+EOF
+mv "$TMPFILE" "$EVENTS_DIR/${TIMESTAMP}.json"
+
+# Always exit 0 — don't block Claude
+exit 0
