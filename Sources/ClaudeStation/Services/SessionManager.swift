@@ -110,13 +110,42 @@ final class SessionManager {
             }
         }
 
-        let unmatchedWaiting = notifications.enumerated().contains { idx, notif in
+        // Assign unmatched "Waiting" notifications to agents
+        // (cmux "Waiting" notifications don't include workspace name)
+        var unmatchedWaitingCount = notifications.enumerated().filter { idx, notif in
             notif.isWaiting && !matchedNotifications.contains(idx)
+        }.count
+
+        if unmatchedWaitingCount > 0 {
+            // Priority 1: agent in the currently selected workspace
+            for i in newAgents.indices where unmatchedWaitingCount > 0 {
+                let isSelected = workspaces.first(where: { $0.ref == newAgents[i].workspaceRef })?.isSelected ?? false
+                if isSelected && newAgents[i].status != .completed && newAgents[i].status != .waiting {
+                    newAgents[i].status = .waiting
+                    unmatchedWaitingCount -= 1
+                }
+            }
+            // Priority 2: any running agent
+            for i in newAgents.indices where unmatchedWaitingCount > 0 {
+                if newAgents[i].status == .running {
+                    newAgents[i].status = .waiting
+                    unmatchedWaitingCount -= 1
+                }
+            }
+            // Priority 3: any idle agent
+            for i in newAgents.indices where unmatchedWaitingCount > 0 {
+                if newAgents[i].status == .idle {
+                    newAgents[i].status = .waiting
+                    unmatchedWaitingCount -= 1
+                }
+            }
         }
+
+        let hasUnmatched = unmatchedWaitingCount > 0
 
         newAgents.sort { $0.status < $1.status }
         agents = newAgents
-        hasUnmatchedWaiting = unmatchedWaiting
+        hasUnmatchedWaiting = hasUnmatched
     }
 
     // MARK: - Private
