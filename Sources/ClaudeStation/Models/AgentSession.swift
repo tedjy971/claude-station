@@ -33,11 +33,11 @@ enum AgentStatus: Int, Comparable {
 
     var color: Color {
         switch self {
-        case .waiting: .orange
-        case .running: .blue
-        case .idle: .secondary
-        case .completed: .green
-        case .unknown: .secondary
+        case .waiting: DS.orange
+        case .running: DS.accent
+        case .idle: DS.idle
+        case .completed: DS.green
+        case .unknown: DS.idle
         }
     }
 
