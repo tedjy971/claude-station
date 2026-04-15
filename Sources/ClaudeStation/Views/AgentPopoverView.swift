@@ -196,8 +196,6 @@ struct AgentCard: View {
         }
         .statusBar(color: agent.status.color)
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { isHovered = h } }
-        .contentShape(RoundedRectangle(cornerRadius: DS.r12))
-        .onTapGesture(perform: onTap)
         .onChange(of: isExpanded) { _, expanded in
             if expanded {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -213,64 +211,74 @@ struct AgentCard: View {
     // MARK: - Main Row
 
     private var mainRow: some View {
-        HStack(spacing: 10) {
-            // Status icon with glow
-            ZStack {
-                Circle()
-                    .fill(agent.status.color.opacity(0.15))
-                    .frame(width: 30, height: 30)
-                Image(systemName: agent.status.systemImage)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(agent.status.color)
-            }
-            .glow(agent.status.color, radius: 4, active: agent.status == .waiting)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(agent.workspace)
-                        .font(.system(.callout, design: .rounded, weight: .bold))
-                        .foregroundStyle(DS.text1)
-
-                    Text(agent.status.label)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                // Status icon with glow
+                ZStack {
+                    Circle()
+                        .fill(agent.status.color.opacity(0.15))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: agent.status.systemImage)
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(agent.status.color)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(agent.status.color.opacity(0.12))
-                        .clipShape(Capsule())
+                }
+                .glow(agent.status.color, radius: 4, active: agent.status == .waiting)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(agent.workspace)
+                            .font(.system(.callout, design: .rounded, weight: .bold))
+                            .foregroundStyle(DS.text1)
+
+                        Text(agent.status.label)
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(agent.status.color)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(agent.status.color.opacity(0.12))
+                            .clipShape(Capsule())
+
+                        Spacer()
+
+                        Text(agent.formattedDuration)
+                            .font(.system(.caption2, design: .monospaced, weight: .medium))
+                            .foregroundStyle(DS.text3)
+                    }
+
+                    if !agent.task.isEmpty {
+                        Text(agent.task)
+                            .font(.system(.caption2, design: .rounded))
+                            .foregroundStyle(DS.text2)
+                            .lineLimit(1)
+                    }
+
+                    if !agent.lastMessage.isEmpty {
+                        Text(agent.lastMessage)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(DS.text3)
+                            .lineLimit(1)
+                    }
                 }
 
-                if !agent.task.isEmpty {
-                    Text(agent.task)
-                        .font(.system(.caption2, design: .rounded))
-                        .foregroundStyle(DS.text2)
-                        .lineLimit(1)
-                }
-
-                if !agent.lastMessage.isEmpty {
-                    Text(agent.lastMessage)
-                        .font(.system(.caption2, design: .monospaced))
+                // Expand indicator + navigate
+                VStack(spacing: 6) {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(DS.text3)
-                        .lineLimit(1)
+
+                    Button(action: onNavigate) {
+                        Image(systemName: "arrow.up.right.square.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(DS.accent.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open in terminal")
                 }
+                .frame(width: 20)
             }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(agent.formattedDuration)
-                    .font(.system(.caption2, design: .monospaced, weight: .medium))
-                    .foregroundStyle(DS.text3)
-
-                Button(action: onNavigate) {
-                    Image(systemName: "arrow.up.right.square.fill")
-                        .font(.system(size: 15))
-                        .foregroundStyle(DS.accent.opacity(0.8))
-                }
-                .buttonStyle(.plain)
-                .help("Open in terminal")
-            }
+            .padding(12)
+            .contentShape(Rectangle())
         }
-        .padding(12)
+        .buttonStyle(.plain)
     }
 
     // MARK: - Actions
@@ -481,14 +489,13 @@ struct AgentCard: View {
             .padding(8)
             .background(Color(red: 0.08, green: 0.08, blue: 0.12))
 
-            // Input field
-            HStack(spacing: 6) {
-                Text("❯")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+            // Input — seamless terminal line
+            HStack(spacing: 0) {
+                Text("❯ ")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(inputFocused ? DS.accent : DS.text3)
-                    .animation(.easeInOut(duration: 0.2), value: inputFocused)
 
-                TextField("Type a message or command...", text: $inputText)
+                TextField("", text: $inputText, prompt: Text("reply...").foregroundStyle(DS.text3.opacity(0.6)))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(DS.text1)
                     .textFieldStyle(.plain)
@@ -497,29 +504,20 @@ struct AgentCard: View {
 
                 if !inputText.isEmpty {
                     Button(action: sendInput) {
-                        Image(systemName: "paperplane.fill")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white)
-                            .padding(5)
-                            .background(DS.accent)
-                            .clipShape(Circle())
+                        Image(systemName: "return")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(DS.accent)
+                            .padding(3)
+                            .background(DS.accent.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                     }
                     .buttonStyle(.plain)
                     .transition(.scale.combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(red: 0.06, green: 0.06, blue: 0.10))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(inputFocused ? DS.accent.opacity(0.4) : Color.clear, lineWidth: 1)
-                    }
-            )
-            .padding(.horizontal, 4).padding(.bottom, 4)
-            .animation(.easeOut(duration: 0.15), value: inputFocused)
-            .animation(.easeOut(duration: 0.15), value: inputText.isEmpty)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Color(red: 0.08, green: 0.08, blue: 0.12))
+            .animation(.easeOut(duration: 0.1), value: inputText.isEmpty)
         }
         .clipShape(RoundedRectangle(cornerRadius: DS.r8))
         .padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 4)
