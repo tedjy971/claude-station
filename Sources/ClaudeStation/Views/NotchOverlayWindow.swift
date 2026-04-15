@@ -6,14 +6,17 @@ final class NotchOverlayWindow: NSPanel {
     private var popover: NSPopover?
     private var screenObserver: Any?
     private var dragStartOrigin: NSPoint?
+    private var dragStartMouse: NSPoint?
 
-    private static let savedPositionKey = "capsulePosition"
+    private static let savedZoneKey = "capsuleSnapZone"
+    private static let capsuleWidth: CGFloat = 460
+    private static let capsuleHeight: CGFloat = 90
 
     init(manager: SessionManager) {
         self.manager = manager
 
         let screen = NSScreen.main ?? NSScreen.screens.first!
-        let frame = Self.initialFrame(for: screen)
+        let frame = Self.frameForZone(Self.loadZone(), screen: screen)
 
         super.init(
             contentRect: frame,
@@ -49,7 +52,7 @@ final class NotchOverlayWindow: NSPanel {
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.resetToDefault()
+            self?.snapToZone(.topCenter, animate: false)
         }
     }
 
@@ -60,68 +63,129 @@ final class NotchOverlayWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    // MARK: - Dragging (called from SwiftUI)
+    // MARK: - Snap Zones
+
+    enum SnapZone: String, CaseIterable {
+        case topLeft, topCenter, topRight
+        case left, center, right
+        case bottomLeft, bottomCenter, bottomRight
+    }
+
+    private static func frameForZone(_ zone: SnapZone, screen: NSScreen) -> NSRect {
+        let w = capsuleWidth
+        let h = capsuleHeight
+        let vis = screen.visibleFrame
+        let margin: CGFloat = 10
+
+        let x: CGFloat
+        let y: CGFloat
+
+        switch zone {
+        // Top row
+        case .topLeft:
+            x = vis.minX + margin
+            y = topY(screen: screen)
+        case .topCenter:
+            x = screen.frame.midX - w / 2
+            y = topY(screen: screen)
+        case .topRight:
+            x = vis.maxX - w - margin
+            y = topY(screen: screen)
+
+        // Middle row
+        case .left:
+            x = vis.minX + margin
+            y = vis.midY - h / 2
+        case .center:
+            x = vis.midX - w / 2
+            y = vis.midY - h / 2
+        case .right:
+            x = vis.maxX - w - margin
+            y = vis.midY - h / 2
+
+        // Bottom row
+        case .bottomLeft:
+            x = vis.minX + margin
+            y = vis.minY + margin
+        case .bottomCenter:
+            x = vis.midX - w / 2
+            y = vis.minY + margin
+        case .bottomRight:
+            x = vis.maxX - w - margin
+            y = vis.minY + margin
+        }
+
+        return NSRect(x: x, y: y, width: w, height: h)
+    }
+
+    private static func topY(screen: NSScreen) -> CGFloat {
+        if let leftArea = screen.auxiliaryTopLeftArea {
+            return leftArea.origin.y - capsuleHeight - 2
+        }
+        return screen.visibleFrame.maxY - capsuleHeight - 6
+    }
+
+    private func nearestZone(to point: NSPoint) -> SnapZone {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return .topCenter }
+        var best: SnapZone = .topCenter
+        var bestDist = CGFloat.greatestFiniteMagnitude
+
+        for zone in SnapZone.allCases {
+            let frame = Self.frameForZone(zone, screen: screen)
+            let center = NSPoint(x: frame.midX, y: frame.midY)
+            let dist = hypot(point.x - center.x, point.y - center.y)
+            if dist < bestDist {
+                bestDist = dist
+                best = zone
+            }
+        }
+        return best
+    }
+
+    private func snapToZone(_ zone: SnapZone, animate: Bool = true) {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        let target = Self.frameForZone(zone, screen: screen)
+        UserDefaults.standard.set(zone.rawValue, forKey: Self.savedZoneKey)
+
+        if animate {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.3
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                self.animator().setFrame(target, display: true)
+            }
+        } else {
+            setFrame(target, display: true)
+        }
+    }
+
+    private static func loadZone() -> SnapZone {
+        guard let raw = UserDefaults.standard.string(forKey: savedZoneKey),
+              let zone = SnapZone(rawValue: raw) else { return .topCenter }
+        return zone
+    }
+
+    // MARK: - Dragging
 
     private func handleDrag(_ translation: CGSize) {
         if dragStartOrigin == nil {
             dragStartOrigin = frame.origin
         }
         guard let start = dragStartOrigin else { return }
-        let newX = start.x + translation.width
-        let newY = start.y - translation.height  // SwiftUI Y is inverted vs AppKit
-        setFrameOrigin(NSPoint(x: newX, y: newY))
+        setFrameOrigin(NSPoint(
+            x: start.x + translation.width,
+            y: start.y - translation.height
+        ))
     }
 
     private func handleDragEnd() {
+        let currentCenter = NSPoint(x: frame.midX, y: frame.midY)
+        let zone = nearestZone(to: currentCenter)
         dragStartOrigin = nil
-        savePosition()
-    }
-
-    // MARK: - Position Persistence
-
-    private func savePosition() {
-        let point = frame.origin
-        UserDefaults.standard.set(
-            ["x": point.x, "y": point.y],
-            forKey: Self.savedPositionKey
-        )
-    }
-
-    private static func savedPosition() -> NSPoint? {
-        guard let dict = UserDefaults.standard.dictionary(forKey: savedPositionKey),
-              let x = dict["x"] as? CGFloat,
-              let y = dict["y"] as? CGFloat else { return nil }
-        return NSPoint(x: x, y: y)
+        snapToZone(zone)
     }
 
     func resetToDefault() {
-        UserDefaults.standard.removeObject(forKey: Self.savedPositionKey)
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        let frame = Self.defaultFrame(for: screen)
-        setFrame(frame, display: true, animate: true)
-    }
-
-    // MARK: - Frame Calculation
-
-    private static let capsuleWidth: CGFloat = 460
-    private static let capsuleHeight: CGFloat = 90
-
-    private static func defaultFrame(for screen: NSScreen) -> NSRect {
-        let x = screen.frame.midX - capsuleWidth / 2
-        let y: CGFloat
-        if let leftArea = screen.auxiliaryTopLeftArea {
-            y = leftArea.origin.y - capsuleHeight - 2
-        } else {
-            y = screen.visibleFrame.maxY - capsuleHeight - 6
-        }
-        return NSRect(x: x, y: y, width: capsuleWidth, height: capsuleHeight)
-    }
-
-    private static func initialFrame(for screen: NSScreen) -> NSRect {
-        if let saved = savedPosition() {
-            return NSRect(x: saved.x, y: saved.y, width: capsuleWidth, height: capsuleHeight)
-        }
-        return defaultFrame(for: screen)
+        snapToZone(.topCenter)
     }
 
     // MARK: - Popover
