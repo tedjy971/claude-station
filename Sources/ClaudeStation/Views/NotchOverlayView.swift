@@ -6,8 +6,7 @@ struct NotchOverlayView: View {
     @State private var breathe = false
     @State private var isDragging = false
     var onTap: () -> Void = {}
-    var onDrag: ((CGSize) -> Void)?
-    var onDragEnd: (() -> Void)?
+    var onDragStart: (() -> Void)?
 
     private var activeDots: [AgentSession] {
         manager.agents.filter { $0.status == .running || $0.status == .waiting }
@@ -75,13 +74,14 @@ struct NotchOverlayView: View {
         .onHover { h in withAnimation(DS.snapSpring) { isHovered = h } }
         .simultaneousGesture(
             DragGesture(minimumDistance: 5)
-                .onChanged { value in
-                    isDragging = true
-                    onDrag?(value.translation)
+                .onChanged { _ in
+                    if !isDragging {
+                        isDragging = true
+                        onDragStart?()
+                    }
                 }
                 .onEnded { _ in
                     isDragging = false
-                    onDragEnd?()
                 }
         )
         .onTapGesture { if !isDragging { onTap() } }

@@ -5,8 +5,13 @@ final class NotchOverlayWindow: NSPanel {
     private let manager: SessionManager
     private var popover: NSPopover?
     private var screenObserver: Any?
-    private var dragStartOrigin: NSPoint?
-    private var dragStartMouse: NSPoint?
+
+    // Drag state
+    private var dragMouseStart: NSPoint?
+    private var dragFrameStart: NSPoint?
+    private var globalDragMonitor: Any?
+    private var localDragMonitor: Any?
+    private var zoneOverlay: SnapZoneOverlay?
 
     private static let savedZoneKey = "capsuleSnapZone"
     private static let capsuleWidth: CGFloat = 460
@@ -39,8 +44,7 @@ final class NotchOverlayWindow: NSPanel {
         let hostView = NSHostingView(
             rootView: NotchOverlayView(
                 onTap: { [weak self] in self?.togglePopover() },
-                onDrag: { [weak self] translation in self?.handleDrag(translation) },
-                onDragEnd: { [weak self] in self?.handleDragEnd() }
+                onDragStart: { [weak self] in self?.startDrag() }
             ).environment(manager)
         )
         hostView.frame = NSRect(origin: .zero, size: frame.size)
@@ -58,10 +62,77 @@ final class NotchOverlayWindow: NSPanel {
 
     deinit {
         if let obs = screenObserver { NotificationCenter.default.removeObserver(obs) }
+        cleanupDragMonitors()
     }
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    // MARK: - Drag (NSEvent-based, pixel-perfect)
+
+    private func startDrag() {
+        dragMouseStart = NSEvent.mouseLocation
+        dragFrameStart = frame.origin
+
+        // Show zone indicators
+        if let screen = NSScreen.main {
+            zoneOverlay = SnapZoneOverlay(screen: screen, zones: Self.allZoneFrames(screen: screen))
+            zoneOverlay?.orderFront(nil)
+        }
+
+        // Global monitor: track mouse everywhere on screen
+        globalDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            if event.type == .leftMouseUp {
+                self?.endDrag()
+            } else {
+                self?.updateDrag()
+            }
+        }
+
+        // Local monitor: track within our own window
+        localDragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            if event.type == .leftMouseUp {
+                self?.endDrag()
+            } else {
+                self?.updateDrag()
+            }
+            return event
+        }
+    }
+
+    private func updateDrag() {
+        guard let start = dragMouseStart, let frameStart = dragFrameStart else { return }
+        let current = NSEvent.mouseLocation
+        setFrameOrigin(NSPoint(
+            x: frameStart.x + (current.x - start.x),
+            y: frameStart.y + (current.y - start.y)
+        ))
+
+        // Highlight nearest zone
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        let nearest = nearestZone(to: center)
+        zoneOverlay?.highlightZone(nearest)
+    }
+
+    private func endDrag() {
+        cleanupDragMonitors()
+
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        let zone = nearestZone(to: center)
+
+        // Hide zone overlay
+        zoneOverlay?.fadeOut()
+        zoneOverlay = nil
+
+        snapToZone(zone)
+        dragMouseStart = nil
+        dragFrameStart = nil
+    }
+
+    private func cleanupDragMonitors() {
+        if let m = globalDragMonitor { NSEvent.removeMonitor(m); globalDragMonitor = nil }
+        if let m = localDragMonitor { NSEvent.removeMonitor(m); localDragMonitor = nil }
+    }
 
     // MARK: - Snap Zones
 
@@ -69,6 +140,22 @@ final class NotchOverlayWindow: NSPanel {
         case topLeft, topCenter, topRight
         case left, center, right
         case bottomLeft, bottomCenter, bottomRight
+    }
+
+    private static func allZoneFrames(screen: NSScreen) -> [(SnapZone, NSRect)] {
+        SnapZone.allCases.map { zone in
+            let f = frameForZone(zone, screen: screen)
+            // Return a compact indicator rect (centered, smaller)
+            let indicatorW: CGFloat = 80
+            let indicatorH: CGFloat = 30
+            let rect = NSRect(
+                x: f.midX - indicatorW / 2,
+                y: f.midY - indicatorH / 2,
+                width: indicatorW,
+                height: indicatorH
+            )
+            return (zone, rect)
+        }
     }
 
     private static func frameForZone(_ zone: SnapZone, screen: NSScreen) -> NSRect {
@@ -81,38 +168,15 @@ final class NotchOverlayWindow: NSPanel {
         let y: CGFloat
 
         switch zone {
-        // Top row
-        case .topLeft:
-            x = vis.minX + margin
-            y = topY(screen: screen)
-        case .topCenter:
-            x = screen.frame.midX - w / 2
-            y = topY(screen: screen)
-        case .topRight:
-            x = vis.maxX - w - margin
-            y = topY(screen: screen)
-
-        // Middle row
-        case .left:
-            x = vis.minX + margin
-            y = vis.midY - h / 2
-        case .center:
-            x = vis.midX - w / 2
-            y = vis.midY - h / 2
-        case .right:
-            x = vis.maxX - w - margin
-            y = vis.midY - h / 2
-
-        // Bottom row
-        case .bottomLeft:
-            x = vis.minX + margin
-            y = vis.minY + margin
-        case .bottomCenter:
-            x = vis.midX - w / 2
-            y = vis.minY + margin
-        case .bottomRight:
-            x = vis.maxX - w - margin
-            y = vis.minY + margin
+        case .topLeft:     x = vis.minX + margin; y = topY(screen: screen)
+        case .topCenter:   x = screen.frame.midX - w / 2; y = topY(screen: screen)
+        case .topRight:    x = vis.maxX - w - margin; y = topY(screen: screen)
+        case .left:        x = vis.minX + margin; y = vis.midY - h / 2
+        case .center:      x = vis.midX - w / 2; y = vis.midY - h / 2
+        case .right:       x = vis.maxX - w - margin; y = vis.midY - h / 2
+        case .bottomLeft:  x = vis.minX + margin; y = vis.minY + margin
+        case .bottomCenter: x = vis.midX - w / 2; y = vis.minY + margin
+        case .bottomRight: x = vis.maxX - w - margin; y = vis.minY + margin
         }
 
         return NSRect(x: x, y: y, width: w, height: h)
@@ -131,13 +195,9 @@ final class NotchOverlayWindow: NSPanel {
         var bestDist = CGFloat.greatestFiniteMagnitude
 
         for zone in SnapZone.allCases {
-            let frame = Self.frameForZone(zone, screen: screen)
-            let center = NSPoint(x: frame.midX, y: frame.midY)
-            let dist = hypot(point.x - center.x, point.y - center.y)
-            if dist < bestDist {
-                bestDist = dist
-                best = zone
-            }
+            let f = Self.frameForZone(zone, screen: screen)
+            let dist = hypot(point.x - f.midX, point.y - f.midY)
+            if dist < bestDist { bestDist = dist; best = zone }
         }
         return best
     }
@@ -149,7 +209,7 @@ final class NotchOverlayWindow: NSPanel {
 
         if animate {
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.3
+                ctx.duration = 0.25
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 self.animator().setFrame(target, display: true)
             }
@@ -164,29 +224,7 @@ final class NotchOverlayWindow: NSPanel {
         return zone
     }
 
-    // MARK: - Dragging
-
-    private func handleDrag(_ translation: CGSize) {
-        if dragStartOrigin == nil {
-            dragStartOrigin = frame.origin
-        }
-        guard let start = dragStartOrigin else { return }
-        setFrameOrigin(NSPoint(
-            x: start.x + translation.width,
-            y: start.y - translation.height
-        ))
-    }
-
-    private func handleDragEnd() {
-        let currentCenter = NSPoint(x: frame.midX, y: frame.midY)
-        let zone = nearestZone(to: currentCenter)
-        dragStartOrigin = nil
-        snapToZone(zone)
-    }
-
-    func resetToDefault() {
-        snapToZone(.topCenter)
-    }
+    func resetToDefault() { snapToZone(.topCenter) }
 
     // MARK: - Popover
 
@@ -207,5 +245,83 @@ final class NotchOverlayWindow: NSPanel {
         p.contentSize = NSSize(width: 420, height: 450)
         p.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minY)
         self.popover = p
+    }
+}
+
+// MARK: - Snap Zone Overlay (dotted indicators)
+
+final class SnapZoneOverlay: NSWindow {
+    private var zones: [(NotchOverlayWindow.SnapZone, NSRect)]
+    private var highlighted: NotchOverlayWindow.SnapZone?
+    private let hostView: NSHostingView<SnapZoneIndicators>
+    private var indicatorView: SnapZoneIndicators
+
+    init(screen: NSScreen, zones: [(NotchOverlayWindow.SnapZone, NSRect)]) {
+        self.zones = zones
+        self.indicatorView = SnapZoneIndicators(zones: zones, highlighted: nil)
+
+        let hostView = NSHostingView(rootView: indicatorView)
+        self.hostView = hostView
+
+        super.init(
+            contentRect: screen.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        isOpaque = false
+        backgroundColor = .clear
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        ignoresMouseEvents = true
+        hasShadow = false
+
+        hostView.frame = NSRect(origin: .zero, size: screen.frame.size)
+        contentView = hostView
+    }
+
+    func highlightZone(_ zone: NotchOverlayWindow.SnapZone) {
+        guard zone != highlighted else { return }
+        highlighted = zone
+        indicatorView = SnapZoneIndicators(zones: zones, highlighted: zone)
+        hostView.rootView = indicatorView
+    }
+
+    func fadeOut() {
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.2
+            self.animator().alphaValue = 0
+        }) {
+            self.orderOut(nil)
+        }
+    }
+}
+
+struct SnapZoneIndicators: View {
+    let zones: [(NotchOverlayWindow.SnapZone, NSRect)]
+    let highlighted: NotchOverlayWindow.SnapZone?
+
+    var body: some View {
+        GeometryReader { geo in
+            ForEach(zones, id: \.0.rawValue) { zone, rect in
+                let isActive = zone == highlighted
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(
+                        isActive ? DS.cyan : DS.text3.opacity(0.3),
+                        style: StrokeStyle(lineWidth: isActive ? 1.5 : 1, dash: [6, 4])
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(isActive ? DS.cyan.opacity(0.08) : .clear)
+                    )
+                    .frame(width: rect.width, height: rect.height)
+                    .position(
+                        x: rect.midX,
+                        y: geo.size.height - rect.midY  // flip Y for SwiftUI
+                    )
+                    .animation(.easeOut(duration: 0.15), value: isActive)
+            }
+        }
     }
 }
