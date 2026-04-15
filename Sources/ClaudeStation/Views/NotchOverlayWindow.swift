@@ -35,6 +35,8 @@ final class NotchOverlayWindow: NSPanel {
             }).environment(manager)
         )
         hostView.frame = NSRect(origin: .zero, size: frame.size)
+        hostView.autoresizingMask = [.width, .height]
+        hostView.translatesAutoresizingMaskIntoConstraints = true
         contentView = hostView
 
         // Reposition when screens change (plug/unplug external display)
@@ -59,8 +61,8 @@ final class NotchOverlayWindow: NSPanel {
     // MARK: - Positioning
 
     private static func computeFrame(for screen: NSScreen) -> (NSRect, Bool) {
-        let width: CGFloat = 340
-        let height: CGFloat = 40
+        let width: CGFloat = 460
+        let height: CGFloat = 44
         let x = screen.frame.midX - width / 2
 
         // Check for notch: auxiliaryTopLeftArea exists only on notch displays

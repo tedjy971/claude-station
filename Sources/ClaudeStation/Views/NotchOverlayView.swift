@@ -49,6 +49,7 @@ struct NotchOverlayView: View {
         .background { capsuleBackground }
         .contentShape(Capsule())
         .scaleEffect(isHovered ? 1.04 : 1.0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onHover { h in
             withAnimation(DS.springSnappy) { isHovered = h }
         }
