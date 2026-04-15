@@ -198,6 +198,16 @@ struct AgentCard: View {
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { isHovered = h } }
         .contentShape(RoundedRectangle(cornerRadius: DS.r12))
         .onTapGesture(perform: onTap)
+        .onChange(of: isExpanded) { _, expanded in
+            if expanded {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    inputFocused = true
+                }
+            } else {
+                inputFocused = false
+                inputText = ""
+            }
+        }
     }
 
     // MARK: - Main Row
@@ -475,28 +485,41 @@ struct AgentCard: View {
             HStack(spacing: 6) {
                 Text("❯")
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(DS.accent)
+                    .foregroundStyle(inputFocused ? DS.accent : DS.text3)
+                    .animation(.easeInOut(duration: 0.2), value: inputFocused)
 
-                TextField("Send a message...", text: $inputText)
+                TextField("Type a message or command...", text: $inputText)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(DS.text1)
                     .textFieldStyle(.plain)
                     .focused($inputFocused)
                     .onSubmit { sendInput() }
 
-                Button(action: sendInput) {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(inputText.isEmpty ? DS.text3 : DS.accent)
+                if !inputText.isEmpty {
+                    Button(action: sendInput) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(5)
+                            .background(DS.accent)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .buttonStyle(.plain)
-                .disabled(inputText.isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Color(red: 0.06, green: 0.06, blue: 0.10))
-            .overlay(alignment: .top) {
-                Rectangle().fill(DS.cardBorder).frame(height: 1)
-            }
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(red: 0.06, green: 0.06, blue: 0.10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(inputFocused ? DS.accent.opacity(0.4) : Color.clear, lineWidth: 1)
+                    }
+            )
+            .padding(.horizontal, 4).padding(.bottom, 4)
+            .animation(.easeOut(duration: 0.15), value: inputFocused)
+            .animation(.easeOut(duration: 0.15), value: inputText.isEmpty)
         }
         .clipShape(RoundedRectangle(cornerRadius: DS.r8))
         .padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 4)

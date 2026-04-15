@@ -54,8 +54,9 @@ final class NotchOverlayWindow: NSPanel {
         }
     }
 
-    // Non-activating: never steal focus
-    override var canBecomeKey: Bool { false }
+    // nonactivatingPanel: won't bring app to foreground
+    // but canBecomeKey = true: needed for text input in popover
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
     // MARK: - Positioning
