@@ -43,7 +43,7 @@ final class SessionManager {
 
     func approveAgent(_ agent: AgentSession) {
         Task {
-            await CmuxService.sendText(workspaceRef: agent.workspaceRef, text: "y\n")
+            await CmuxService.sendText(surfaceRef: agent.surfaceRef, text: "y\n")
             try? await Task.sleep(for: .seconds(1))
             await refresh()
         }
@@ -51,7 +51,7 @@ final class SessionManager {
 
     func denyAgent(_ agent: AgentSession) {
         Task {
-            await CmuxService.sendText(workspaceRef: agent.workspaceRef, text: "n\n")
+            await CmuxService.sendText(surfaceRef: agent.surfaceRef, text: "n\n")
             try? await Task.sleep(for: .seconds(1))
             await refresh()
         }
@@ -59,12 +59,11 @@ final class SessionManager {
 
     func selectOption(_ agent: AgentSession, option: Int) {
         Task {
-            // Navigate: option 1 is selected by default, press down (N-1) times
             for _ in 1..<option {
-                await CmuxService.sendKey(workspaceRef: agent.workspaceRef, key: "down")
+                await CmuxService.sendKey(surfaceRef: agent.surfaceRef, key: "down")
                 try? await Task.sleep(for: .milliseconds(80))
             }
-            await CmuxService.sendKey(workspaceRef: agent.workspaceRef, key: "enter")
+            await CmuxService.sendKey(surfaceRef: agent.surfaceRef, key: "enter")
             try? await Task.sleep(for: .seconds(1))
             await refresh()
         }

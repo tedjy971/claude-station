@@ -93,17 +93,17 @@ enum CmuxService {
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func sendText(workspaceRef: String, text: String) async {
+    static func sendText(surfaceRef: String, text: String) async {
         _ = await ShellExecutor.runArgs(
             executable: cmuxPath,
-            args: ["send", "--workspace", workspaceRef, "--", text]
+            args: ["send", "--surface", surfaceRef, "--", text]
         )
     }
 
-    static func sendKey(workspaceRef: String, key: String) async {
+    static func sendKey(surfaceRef: String, key: String) async {
         _ = await ShellExecutor.runArgs(
             executable: cmuxPath,
-            args: ["send-key", "--workspace", workspaceRef, key]
+            args: ["send-key", "--surface", surfaceRef, key]
         )
     }
 
