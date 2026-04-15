@@ -8,10 +8,11 @@ final class SessionManager {
     private(set) var agents: [AgentSession] = []
     private(set) var hasUnmatchedWaiting = false
 
+    var activeAgents: [AgentSession] { agents.filter { $0.status.showInOverlay } }
     var waitingCount: Int { agents.filter { $0.status == .waiting }.count }
     var runningCount: Int { agents.filter { $0.status == .running }.count }
     var hasWaiting: Bool { waitingCount > 0 || hasUnmatchedWaiting }
-    var totalCount: Int { agents.count }
+    var totalActive: Int { activeAgents.count }
 
     private var refreshTask: Task<Void, Never>?
     private var fileMonitor: DispatchSourceFileSystemObject?
@@ -30,75 +31,80 @@ final class SessionManager {
         fileMonitor = nil
     }
 
-    func refresh() async {
-        let sessionFiles = readSessionFiles()
-        let aliveFiles = sessionFiles.filter { isProcessAlive(pid: $0.pid) }
-
-        guard !aliveFiles.isEmpty else {
-            agents = []
-            hasUnmatchedWaiting = false
-            return
+    func navigateToAgent(_ agent: AgentSession) {
+        Task {
+            await CmuxService.selectWorkspace(ref: agent.workspaceRef)
         }
+    }
 
+    func loadOutput(for agent: AgentSession) async -> String {
+        await CmuxService.readScreen(surfaceRef: agent.surfaceRef, lines: 8)
+    }
+
+    func refresh() async {
+        // Primary source: cmux tree (only shows real Claude surfaces)
         async let workspacesResult = CmuxService.fetchWorkspaces()
         async let notificationsResult = CmuxService.fetchNotifications()
-        async let ttyMapResult = fetchTTYMap(for: aliveFiles.map(\.pid))
 
         let workspaces = await workspacesResult
         let notifications = await notificationsResult
-        let ttyMap = await ttyMapResult
+
+        // Build map: TTY → session file data (for startedAt)
+        let sessionFiles = readSessionFiles()
+        let ttyMap = await fetchTTYMap(for: sessionFiles.map(\.pid))
+        var ttyToSession: [String: SessionFile] = [:]
+        for session in sessionFiles {
+            if let tty = ttyMap[session.pid] {
+                ttyToSession[tty] = session
+            }
+        }
 
         var newAgents: [AgentSession] = []
         var matchedNotifications: Set<Int> = []
 
-        for session in aliveFiles {
-            var workspace = session.projectName
-            var task = ""
-            var status: AgentStatus = .running
-            var preview: String?
-            var isUnread = false
+        for ws in workspaces {
+            for surface in ws.surfaces where surface.claudeStatus != .none {
+                var status: AgentStatus = surface.claudeStatus == .running ? .running : .idle
 
-            // Match session to cmux workspace via TTY
-            if let tty = ttyMap[session.pid] {
-                for ws in workspaces {
-                    for surface in ws.surfaces where surface.tty == tty && surface.isClaude {
-                        workspace = ws.name
-                        task = surface.claudeTaskName ?? ""
+                // Enrich with session file data
+                let session = surface.tty.flatMap { ttyToSession[$0] }
+                let startedAt = session?.startedAt ?? Date()
+                let cwd = session?.cwd ?? ""
+                let sessionId = session?.sessionId ?? surface.ref
+                let pid = session?.pid ?? 0
+
+                // Check notifications for this workspace
+                for (idx, notif) in notifications.enumerated() {
+                    if notif.isWaiting {
+                        if let hint = notif.workspaceHint,
+                           hint.localizedCaseInsensitiveCompare(ws.name) == .orderedSame {
+                            status = .waiting
+                            matchedNotifications.insert(idx)
+                        }
+                    } else if notif.isCompleted {
+                        if let hint = notif.workspaceHint,
+                           hint.localizedCaseInsensitiveCompare(ws.name) == .orderedSame {
+                            status = .completed
+                            matchedNotifications.insert(idx)
+                        }
                     }
                 }
-            }
 
-            // Match notifications by workspace name
-            for (idx, notif) in notifications.enumerated() {
-                if notif.isCompleted, let hint = notif.workspaceHint,
-                   hint.localizedCaseInsensitiveCompare(workspace) == .orderedSame {
-                    status = .completed
-                    preview = notif.preview
-                    matchedNotifications.insert(idx)
-                } else if notif.isWaiting, let hint = notif.workspaceHint,
-                          hint.localizedCaseInsensitiveCompare(workspace) == .orderedSame {
-                    status = .waiting
-                    preview = notif.preview
-                    isUnread = !notif.isRead
-                    matchedNotifications.insert(idx)
-                }
+                newAgents.append(AgentSession(
+                    id: sessionId,
+                    pid: pid,
+                    sessionId: sessionId,
+                    workspace: ws.name,
+                    workspaceRef: ws.ref,
+                    surfaceRef: surface.ref,
+                    task: surface.claudeTaskName ?? "",
+                    cwd: cwd,
+                    startedAt: startedAt,
+                    status: status
+                ))
             }
-
-            newAgents.append(AgentSession(
-                id: session.sessionId,
-                pid: session.pid,
-                sessionId: session.sessionId,
-                workspace: workspace,
-                task: task,
-                cwd: session.cwd,
-                startedAt: session.startedAt,
-                status: status,
-                notificationPreview: preview,
-                isUnread: isUnread
-            ))
         }
 
-        // Check for unmatched waiting notifications
         let unmatchedWaiting = notifications.enumerated().contains { idx, notif in
             notif.isWaiting && !matchedNotifications.contains(idx)
         }
@@ -140,10 +146,6 @@ final class SessionManager {
         let sessionId: String
         let cwd: String
         let startedAt: Date
-
-        var projectName: String {
-            (cwd as NSString).lastPathComponent
-        }
     }
 
     private func readSessionFiles() -> [SessionFile] {
@@ -167,10 +169,6 @@ final class SessionManager {
                 startedAt: Date(timeIntervalSince1970: startedAtMs / 1000)
             )
         }
-    }
-
-    private nonisolated func isProcessAlive(pid: Int) -> Bool {
-        kill(Int32(pid), 0) == 0
     }
 
     // MARK: - File Monitoring

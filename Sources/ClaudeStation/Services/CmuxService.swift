@@ -11,19 +11,35 @@ struct SurfaceInfo {
     let ref: String
     let title: String
     let tty: String?
-    let isClaude: Bool
     let isActive: Bool
+    let claudeStatus: ClaudeIndicator
 
     var claudeTaskName: String? {
-        guard isClaude else { return nil }
+        guard claudeStatus != .none else { return nil }
         var cleaned = title
-        for prefix in ["✳ ", "⠐ ", "⠂ ", "⠄ ", "⡀ "] {
+        for prefix in Self.allPrefixes {
             if cleaned.hasPrefix(prefix) {
                 cleaned = String(cleaned.dropFirst(prefix.count))
                 break
             }
         }
         return cleaned.isEmpty ? nil : cleaned
+    }
+
+    enum ClaudeIndicator {
+        case running   // ⠐ ⠂ ⠄ ⡀ (spinner = actively processing)
+        case idle      // ✳ (star = waiting at prompt)
+        case none      // plain terminal
+    }
+
+    private static let runningPrefixes = ["⠐ ", "⠂ ", "⠄ ", "⡀ ", "⠈ ", "⠁ ", "⠑ ", "⠃ "]
+    private static let idlePrefixes = ["✳ "]
+    static let allPrefixes = runningPrefixes + idlePrefixes
+
+    static func detectIndicator(in title: String) -> ClaudeIndicator {
+        if runningPrefixes.contains(where: { title.hasPrefix($0) }) { return .running }
+        if idlePrefixes.contains(where: { title.hasPrefix($0) }) { return .idle }
+        return .none
     }
 }
 
@@ -62,6 +78,15 @@ enum CmuxService {
         return "tty\(tty)"
     }
 
+    static func selectWorkspace(ref: String) async {
+        _ = await ShellExecutor.run("cmux select-workspace --workspace \(ref)")
+    }
+
+    static func readScreen(surfaceRef: String, lines: Int = 5) async -> String {
+        let output = await ShellExecutor.run("cmux read-screen --surface \(surfaceRef) --lines \(lines) 2>/dev/null")
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Tree Parsing
 
     private static func parseTree(_ output: String) -> [WorkspaceInfo] {
@@ -85,13 +110,13 @@ enum CmuxService {
                line.contains("[terminal]"),
                let title = line.firstCaptureGroup(of: #"\[terminal\] "([^"]*)""#) {
                 let tty = line.firstCaptureGroup(of: #"tty=(\w+)"#)
-                let isClaude = ["✳", "⠐", "⠂", "⠄", "⡀"].contains(where: { title.hasPrefix($0) })
+                let indicator = SurfaceInfo.detectIndicator(in: title)
                 let surface = SurfaceInfo(
                     ref: sRef,
                     title: title,
                     tty: tty,
-                    isClaude: isClaude,
-                    isActive: line.contains("◀ active")
+                    isActive: line.contains("◀ active"),
+                    claudeStatus: indicator
                 )
                 current?.surfaces.append(surface)
             }
