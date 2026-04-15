@@ -32,7 +32,7 @@ final class NotchOverlayWindow: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
-        level = .floating
+        level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         hasShadow = false
         ignoresMouseEvents = false
@@ -41,7 +41,7 @@ final class NotchOverlayWindow: NSPanel {
         becomesKeyOnlyIfNeeded = true
         isMovable = false
 
-        let hostView = NSHostingView(
+        let hostView = ClickThroughHostingView(
             rootView: NotchOverlayView(
                 onTap: { [weak self] in self?.togglePopover() },
                 onDragStart: { [weak self] in self?.startDrag() }
@@ -173,9 +173,10 @@ final class NotchOverlayWindow: NSPanel {
             y = vis.maxY - h + vInset
         case .topCenter:
             x = screen.frame.midX - w / 2
-            // Notch display: capsule extends DOWN from notch (touching it)
+            // Notch display: capsule IN the menu bar, centered on notch
             if let leftArea = screen.auxiliaryTopLeftArea {
-                y = leftArea.origin.y - h + vInset
+                let menuBarCenterY = leftArea.origin.y + leftArea.height / 2
+                y = menuBarCenterY - h / 2
             } else {
                 y = vis.maxY - h + vInset
             }
@@ -303,6 +304,22 @@ final class SnapZoneOverlay: NSWindow {
         }) {
             self.orderOut(nil)
         }
+    }
+}
+
+// MARK: - Click-Through Hosting View
+
+final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Only respond to clicks near the center where the capsule is
+        let capsuleRect = NSRect(
+            x: bounds.midX - 160,
+            y: bounds.midY - 22,
+            width: 320,
+            height: 44
+        )
+        guard capsuleRect.contains(point) else { return nil }
+        return super.hitTest(point)
     }
 }
 
