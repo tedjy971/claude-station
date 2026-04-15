@@ -20,13 +20,10 @@ struct NotchOverlayView: View {
 
     var body: some View {
         HStack(spacing: isHovered ? 8 : 5) {
-            // Cloud icon — morphs with state
-            if !activeDots.isEmpty || isHovered {
-                Image(systemName: manager.hasWaiting ? "exclamationmark.cloud.fill" : "cloud.fill")
-                    .font(.system(size: isHovered ? 13 : 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .transition(.scale.combined(with: .opacity))
-            }
+            // Cloud icon — always visible
+            Image(systemName: manager.hasWaiting ? "exclamationmark.cloud.fill" : "cloud.fill")
+                .font(.system(size: isHovered ? 13 : 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
 
             // Active dots — always visible
             ForEach(activeDots.prefix(6)) { agent in
@@ -47,7 +44,7 @@ struct NotchOverlayView: View {
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .padding(.horizontal, isHovered ? 18 : (activeDots.isEmpty ? 10 : 14))
+        .padding(.horizontal, isHovered ? 18 : 12)
         .padding(.vertical, isHovered ? 9 : 7)
         .background { capsuleBackground }
         .contentShape(Capsule())
