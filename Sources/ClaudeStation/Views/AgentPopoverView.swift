@@ -5,92 +5,117 @@ struct AgentPopoverView: View {
     @State private var expandedAgent: String?
     @State private var fullOutput: String = ""
     @State private var loadingOutput = false
+    @State private var heartbeatPhase = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            heartbeat
             header
-            separator
             if manager.agents.isEmpty { emptyState } else { agentList }
-            separator
             footer
         }
         .frame(width: 420)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(DS.base)
         .preferredColorScheme(.dark)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                heartbeatPhase = true
+            }
+        }
+    }
+
+    // MARK: - Heartbeat Line
+
+    private var heartbeat: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        .clear,
+                        heartbeatColor.opacity(heartbeatPhase ? 0.8 : 0.2),
+                        heartbeatColor.opacity(heartbeatPhase ? 0.6 : 0.1),
+                        .clear
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(height: 1.5)
+    }
+
+    private var heartbeatColor: Color {
+        if manager.hasWaiting { return DS.amber }
+        if manager.runningCount > 0 { return DS.cyan }
+        return DS.text3
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(DS.accent.opacity(0.15))
-                    .frame(width: 28, height: 28)
-                Image(systemName: "cloud.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DS.accent)
-            }
+            Text("λ")
+                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                .foregroundStyle(DS.cyan)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Claude Station")
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(DS.text1)
                 Text("\(manager.agents.count) session\(manager.agents.count == 1 ? "" : "s")")
-                    .font(.system(.caption2, design: .rounded))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(DS.text3)
             }
 
             Spacer()
 
-            HStack(spacing: 6) {
-                if manager.runningCount > 0 { statusPill(manager.runningCount, "active", DS.accent) }
-                if manager.waitingCount > 0 { statusPill(manager.waitingCount, "waiting", DS.orange) }
+            HStack(spacing: 5) {
+                if manager.runningCount > 0 { pill(manager.runningCount, "active", DS.cyan) }
+                if manager.waitingCount > 0 { pill(manager.waitingCount, "waiting", DS.amber) }
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
     }
 
-    private func statusPill(_ count: Int, _ label: String, _ color: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(count) \(label)")
-                .font(.system(.caption2, design: .rounded, weight: .medium))
+    private func pill(_ count: Int, _ label: String, _ color: Color) -> some View {
+        HStack(spacing: 3) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text("\(count)")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
         }
         .foregroundStyle(color)
-        .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(color.opacity(0.12))
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(color.opacity(0.1))
         .clipShape(Capsule())
+        .overlay {
+            Capsule().strokeBorder(color.opacity(0.2), lineWidth: 0.5)
+        }
     }
 
-    // MARK: - Empty State
+    // MARK: - Empty
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "cloud.sun.fill")
-                .font(.system(size: 36))
+        VStack(spacing: 10) {
+            Text("λ")
+                .font(.system(size: 32, weight: .ultraLight, design: .monospaced))
                 .foregroundStyle(DS.text3)
-                .symbolRenderingMode(.hierarchical)
             Text("No active sessions")
-                .font(.system(.subheadline, design: .rounded, weight: .medium))
-                .foregroundStyle(DS.text2)
-            Text("Start a Claude Code session to see it here")
-                .font(.caption2).foregroundStyle(DS.text3)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(DS.text3)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 32)
+        .frame(maxWidth: .infinity).padding(.vertical, 36)
     }
 
     // MARK: - Agent List
 
     private var agentList: some View {
         ScrollView {
-            LazyVStack(spacing: 6) {
+            LazyVStack(spacing: 5) {
                 ForEach(manager.agents) { agent in
                     AgentCard(
                         agent: agent,
                         isExpanded: expandedAgent == agent.id,
                         onTap: {
-                            withAnimation(DS.springSnappy) {
+                            withAnimation(DS.snapSpring) {
                                 expandedAgent = expandedAgent == agent.id ? nil : agent.id
                                 if expandedAgent == agent.id { loadFullOutput(agent) }
                             }
@@ -106,7 +131,7 @@ struct AgentPopoverView: View {
                     )
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
+            .padding(.horizontal, 8).padding(.vertical, 6)
         }
         .frame(maxHeight: 480)
     }
@@ -114,42 +139,34 @@ struct AgentPopoverView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack(spacing: 0) {
-            ForEach(shortcuts, id: \.0) { key, label in
-                HStack(spacing: 3) {
+        HStack {
+            ForEach(keys, id: \.0) { key, label in
+                HStack(spacing: 2) {
                     Text(key)
-                        .font(.system(.caption2, design: .monospaced, weight: .semibold))
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(DS.card)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                    Text(label)
-                        .font(.system(.caption2, design: .rounded))
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 3).padding(.vertical, 1)
+                        .background(DS.surface2)
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                    Text(label).font(.system(size: 9, design: .monospaced))
                 }
                 .foregroundStyle(DS.text3)
-                if label != "toggle" { Spacer() }
             }
 
             Spacer()
 
             Button { NSApplication.shared.terminate(nil) } label: {
-                Image(systemName: "power")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(DS.red.opacity(0.7))
-                    .padding(4)
-                    .background(DS.red.opacity(0.1))
-                    .clipShape(Circle())
+                Text("quit")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(DS.coral.opacity(0.6))
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+        .padding(.horizontal, 14).padding(.vertical, 7)
+        .background(DS.surface1.opacity(0.5))
     }
 
-    private var shortcuts: [(String, String)] {
-        [("⌃⇧A", "approve"), ("⌃⇧D", "deny"), ("⌃⇧V", "toggle")]
-    }
-
-    private var separator: some View {
-        Rectangle().fill(DS.cardBorder).frame(height: 1)
+    private var keys: [(String, String)] {
+        [("⌃⇧A", "allow"), ("⌃⇧D", "deny"), ("⌃⇧V", "toggle")]
     }
 
     private func loadFullOutput(_ agent: AgentSession) {
@@ -180,30 +197,39 @@ struct AgentCard: View {
     @State private var inputText = ""
     @FocusState private var inputFocused: Bool
 
+    private var accentColor: Color {
+        switch agent.status {
+        case .waiting: DS.amber
+        case .running: DS.cyan
+        case .completed: DS.emerald
+        default: DS.text3
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            mainRow
-            if agent.status == .waiting, let action = agent.pendingAction {
-                actionSection(action)
+        HStack(spacing: 0) {
+            // Left status bar
+            RoundedRectangle(cornerRadius: 1)
+                .fill(accentColor)
+                .frame(width: 2.5)
+                .padding(.vertical, 6)
+                .glow(accentColor, radius: 3, active: agent.status == .waiting)
+
+            VStack(alignment: .leading, spacing: 0) {
+                mainRow
+                if agent.status == .waiting, let action = agent.pendingAction {
+                    actionSection(action)
+                }
+                if isExpanded { terminalSection }
             }
-            if isExpanded { outputSection }
         }
-        .background(isHovered ? DS.cardHover : DS.card)
-        .clipShape(RoundedRectangle(cornerRadius: DS.r12))
-        .overlay {
-            RoundedRectangle(cornerRadius: DS.r12)
-                .strokeBorder(agent.status == .waiting ? DS.orange.opacity(0.3) : DS.cardBorder, lineWidth: 0.5)
-        }
-        .statusBar(color: agent.status.color)
-        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { isHovered = h } }
+        .glassCard(accent: accentColor, active: agent.status == .waiting || isHovered)
+        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { isHovered = h } }
         .onChange(of: isExpanded) { _, expanded in
             if expanded {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    inputFocused = true
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { inputFocused = true }
             } else {
-                inputFocused = false
-                inputText = ""
+                inputFocused = false; inputText = ""
             }
         }
     }
@@ -212,70 +238,60 @@ struct AgentCard: View {
 
     private var mainRow: some View {
         Button(action: onTap) {
-            HStack(spacing: 10) {
-                // Status icon with glow
-                ZStack {
-                    Circle()
-                        .fill(agent.status.color.opacity(0.15))
-                        .frame(width: 30, height: 30)
-                    Image(systemName: agent.status.systemImage)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(agent.status.color)
-                }
-                .glow(agent.status.color, radius: 4, active: agent.status == .waiting)
-
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(agent.workspace)
-                            .font(.system(.callout, design: .rounded, weight: .bold))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundStyle(DS.text1)
 
-                        Text(agent.status.label)
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
-                            .foregroundStyle(agent.status.color)
+                        Text(agent.status.label.uppercased())
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundStyle(accentColor)
                             .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(agent.status.color.opacity(0.12))
-                            .clipShape(Capsule())
+                            .background(accentColor.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
 
                         Spacer()
 
                         Text(agent.formattedDuration)
-                            .font(.system(.caption2, design: .monospaced, weight: .medium))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(DS.text3)
                     }
 
                     if !agent.task.isEmpty {
                         Text(agent.task)
-                            .font(.system(.caption2, design: .rounded))
+                            .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(DS.text2)
                             .lineLimit(1)
                     }
 
-                    if !agent.lastMessage.isEmpty {
+                    if !agent.lastMessage.isEmpty && !isExpanded {
                         Text(agent.lastMessage)
-                            .font(.system(.caption2, design: .monospaced))
+                            .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(DS.text3)
                             .lineLimit(1)
                     }
                 }
 
-                // Expand indicator + navigate
                 VStack(spacing: 6) {
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(DS.text3)
 
                     Button(action: onNavigate) {
-                        Image(systemName: "arrow.up.right.square.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(DS.accent.opacity(0.8))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(DS.cyan.opacity(0.7))
+                            .padding(4)
+                            .background(DS.cyan.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                     .buttonStyle(.plain)
-                    .help("Open in terminal")
                 }
-                .frame(width: 20)
+                .frame(width: 24)
             }
-            .padding(12)
+            .padding(.horizontal, 10).padding(.vertical, 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -285,242 +301,222 @@ struct AgentCard: View {
 
     @ViewBuilder
     private func actionSection(_ action: PendingAction) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Rectangle().fill(DS.cardBorder).frame(height: 1).padding(.horizontal, 12)
+        VStack(alignment: .leading, spacing: 6) {
+            Rectangle().fill(DS.glassBorder).frame(height: 0.5).padding(.horizontal, 10)
 
             switch action {
             case let .permission(tool, detail):
-                permissionAction(tool: tool, detail: detail)
+                permissionView(tool: tool, detail: detail)
             case let .planReview(content):
-                planAction(content: content)
+                planView(content: content)
             case let .question(options):
-                questionAction(options: options)
+                questionView(options: options)
             }
         }
-        .padding(.bottom, 12)
-        .transition(.asymmetric(
-            insertion: .opacity.combined(with: .move(edge: .top)),
-            removal: .opacity
-        ))
+        .padding(.bottom, 8)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
-    private func permissionAction(tool: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 5) {
+    private func permissionView(tool: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
                 Image(systemName: "shield.lefthalf.filled")
-                    .font(.caption).foregroundStyle(DS.orange)
-                Text("Permission: **\(tool)**")
-                    .font(.system(.caption, design: .rounded))
+                    .font(.system(size: 10)).foregroundStyle(DS.amber)
+                Text(tool)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(DS.text2)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
 
             if !detail.isEmpty {
                 Text(detail)
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(DS.text3).lineLimit(2)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 10)
             }
 
-            actionButtonRow
+            approveRow
         }
     }
 
-    private func planAction(content: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 5) {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.caption).foregroundStyle(DS.purple)
-                Text("Plan Review")
-                    .font(.system(.caption, design: .rounded, weight: .medium))
-                    .foregroundStyle(DS.text2)
+    private func planView(content: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 10)).foregroundStyle(DS.violet)
+                Text("PLAN")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(DS.violet)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
 
             ScrollView {
                 Text(content)
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(DS.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
-            .frame(maxHeight: 150)
-            .padding(8)
-            .background(DS.codeBg)
-            .clipShape(RoundedRectangle(cornerRadius: DS.r8))
-            .padding(.horizontal, 12)
+            .frame(maxHeight: 120)
+            .padding(6).background(DS.termBg)
+            .clipShape(RoundedRectangle(cornerRadius: DS.r6))
+            .padding(.horizontal, 10)
 
-            actionButtonRow
+            approveRow
         }
     }
 
-    private func questionAction(options: [(index: Int, label: String)]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
-                Image(systemName: "questionmark.bubble.fill")
-                    .font(.caption).foregroundStyle(DS.orange)
-                Text("Choose an option")
-                    .font(.system(.caption, design: .rounded, weight: .medium))
-                    .foregroundStyle(DS.text2)
+    private func questionView(options: [(index: Int, label: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 10)).foregroundStyle(DS.amber)
+                Text("SELECT")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(DS.amber)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
 
             ForEach(options, id: \.index) { option in
                 Button { onSelectOption(option.index) } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Text("\(option.index)")
-                            .font(.system(.caption2, design: .monospaced, weight: .bold))
-                            .foregroundStyle(DS.accent)
-                            .frame(width: 18, height: 18)
-                            .background(DS.accent.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(DS.cyan)
+                            .frame(width: 16, height: 16)
+                            .background(DS.cyan.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
 
                         Text(option.label)
-                            .font(.system(.caption, design: .rounded, weight: .medium))
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundStyle(DS.text1)
 
                         Spacer()
 
-                        Image(systemName: "chevron.right")
+                        Image(systemName: "return")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(DS.text3)
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(DS.accent.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.r8))
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(DS.surface2.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.r6))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
             }
         }
     }
 
-    private var actionButtonRow: some View {
-        HStack(spacing: 8) {
+    private var approveRow: some View {
+        HStack(spacing: 6) {
             Button(action: onApprove) {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-                    Text("Allow").font(.system(.caption, design: .rounded, weight: .bold))
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                    Text("Allow").font(.system(size: 10, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14).padding(.vertical, 6)
-                .background(
-                    LinearGradient(colors: [DS.green, DS.green.opacity(0.8)],
-                                   startPoint: .top, endPoint: .bottom)
-                )
+                .foregroundStyle(.black)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(DS.emerald)
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
 
             Button(action: onDeny) {
-                HStack(spacing: 4) {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-                    Text("Deny").font(.system(.caption, design: .rounded, weight: .bold))
+                HStack(spacing: 3) {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                    Text("Deny").font(.system(size: 10, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(DS.red)
-                .padding(.horizontal, 14).padding(.vertical, 6)
-                .background(DS.red.opacity(0.12))
+                .foregroundStyle(DS.coral)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(DS.coral.opacity(0.1))
                 .clipShape(Capsule())
-                .overlay { Capsule().strokeBorder(DS.red.opacity(0.3), lineWidth: 0.5) }
+                .overlay { Capsule().strokeBorder(DS.coral.opacity(0.25), lineWidth: 0.5) }
             }
             .buttonStyle(.plain)
 
             Spacer()
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
     }
 
-    // MARK: - Mini Terminal
+    // MARK: - Terminal
 
-    private var outputSection: some View {
+    private var terminalSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Rectangle().fill(DS.cardBorder).frame(height: 1).padding(.horizontal, 12)
+            Rectangle().fill(DS.glassBorder).frame(height: 0.5).padding(.horizontal, 10)
 
             // Terminal header
             HStack(spacing: 6) {
-                // Traffic light dots
-                HStack(spacing: 4) {
-                    Circle().fill(DS.red.opacity(0.8)).frame(width: 6, height: 6)
-                    Circle().fill(DS.orange.opacity(0.8)).frame(width: 6, height: 6)
-                    Circle().fill(DS.green.opacity(0.8)).frame(width: 6, height: 6)
-                }
-
-                Text("TERMINAL")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(DS.text3)
-                    .tracking(1)
-
-                Text(agent.workspace)
-                    .font(.system(size: 9, design: .monospaced))
+                Text("~/\(agent.workspace.lowercased())")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(DS.text3)
 
                 Spacer()
 
-                Button(action: onRefreshOutput) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(DS.text3)
-                }
-                .buttonStyle(.plain)
-                .help("Refresh output")
-
                 if loadingOutput {
                     ProgressView().controlSize(.mini)
+                } else {
+                    Button(action: onRefreshOutput) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(DS.text3)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Color.black.opacity(0.3))
+            .padding(.horizontal, 10).padding(.vertical, 5)
 
-            // Terminal output
+            // Output
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(expandedOutput.isEmpty ? "..." : expandedOutput)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(DS.text2)
+                    Text(expandedOutput.isEmpty ? "waiting..." : expandedOutput)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(DS.termText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                        .id("output-bottom")
+                        .id("bottom")
                 }
                 .onChange(of: expandedOutput) { _, _ in
-                    proxy.scrollTo("output-bottom", anchor: .bottom)
+                    proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
-            .frame(maxHeight: 180)
-            .padding(8)
-            .background(Color(red: 0.08, green: 0.08, blue: 0.12))
+            .frame(height: 140)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(DS.termBg)
 
             // Input — seamless terminal line
             HStack(spacing: 0) {
-                Text("❯ ")
+                Text("λ ")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(inputFocused ? DS.accent : DS.text3)
+                    .foregroundStyle(inputFocused ? DS.cyan : DS.text3)
 
-                TextField("", text: $inputText, prompt: Text("reply...").foregroundStyle(DS.text3.opacity(0.6)))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(DS.text1)
-                    .textFieldStyle(.plain)
-                    .focused($inputFocused)
-                    .onSubmit { sendInput() }
+                TextField("", text: $inputText, prompt:
+                    Text("...").foregroundStyle(DS.text3.opacity(0.4))
+                )
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(DS.text1)
+                .textFieldStyle(.plain)
+                .focused($inputFocused)
+                .onSubmit { sendInput() }
 
                 if !inputText.isEmpty {
-                    Button(action: sendInput) {
-                        Image(systemName: "return")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(DS.accent)
-                            .padding(3)
-                            .background(DS.accent.opacity(0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.scale.combined(with: .opacity))
+                    Text("⏎")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(DS.cyan.opacity(0.6))
+                        .transition(.opacity)
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(Color(red: 0.08, green: 0.08, blue: 0.12))
-            .animation(.easeOut(duration: 0.1), value: inputText.isEmpty)
+            .background(DS.termBg)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(inputFocused ? DS.cyan.opacity(0.3) : DS.glassBorder)
+                    .frame(height: 0.5)
+            }
+            .animation(.easeOut(duration: 0.1), value: inputFocused)
         }
-        .clipShape(RoundedRectangle(cornerRadius: DS.r8))
-        .padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 4)
+        .clipShape(RoundedRectangle(cornerRadius: DS.r6))
+        .padding(.horizontal, 6).padding(.bottom, 6).padding(.top, 2)
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
