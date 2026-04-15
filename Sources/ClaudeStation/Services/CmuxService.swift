@@ -85,12 +85,19 @@ enum CmuxService {
         _ = await ShellExecutor.runArgs(executable: cmuxPath, args: ["select-workspace", "--workspace", ref])
     }
 
-    static func readScreen(surfaceRef: String, lines: Int = 5) async -> String {
+    static func readScreen(workspaceRef: String, lines: Int = 5) async -> String {
         let output = await ShellExecutor.runArgs(
             executable: cmuxPath,
-            args: ["read-screen", "--surface", surfaceRef, "--lines", "\(lines)"]
+            args: ["read-screen", "--workspace", workspaceRef, "--lines", "\(lines)"]
         )
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func sendText(workspaceRef: String, text: String) async {
+        _ = await ShellExecutor.runArgs(
+            executable: cmuxPath,
+            args: ["send", "--workspace", workspaceRef, "--", text]
+        )
     }
 
     // MARK: - Tree Parsing

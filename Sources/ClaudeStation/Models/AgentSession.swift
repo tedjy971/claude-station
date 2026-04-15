@@ -46,6 +46,57 @@ enum AgentStatus: Int, Comparable {
     }
 }
 
+enum PendingAction: Equatable {
+    case permission(tool: String, detail: String)
+    case question(options: [(index: Int, label: String)])
+
+    static func == (lhs: PendingAction, rhs: PendingAction) -> Bool {
+        switch (lhs, rhs) {
+        case let (.permission(t1, d1), .permission(t2, d2)): return t1 == t2 && d1 == d2
+        case let (.question(o1), .question(o2)):
+            return o1.map(\.index) == o2.map(\.index) && o1.map(\.label) == o2.map(\.label)
+        default: return false
+        }
+    }
+
+    static func parse(from screen: String) -> PendingAction? {
+        let lines = screen.components(separatedBy: "\n")
+
+        // Permission prompt: look for "Allow" near bottom
+        for (i, line) in lines.enumerated() {
+            if line.contains("Allow") && (line.contains("(y") || line.contains("yes")) {
+                var tool = "Tool"
+                var detail = ""
+                for j in stride(from: i - 1, through: max(0, i - 6), by: -1) {
+                    if lines[j].contains("⏺") {
+                        if let match = lines[j].firstCaptureGroup(of: #"⏺\s+(\w+)"#) {
+                            tool = match
+                        }
+                        detail = lines[j].trimmingCharacters(in: .whitespaces)
+                        break
+                    }
+                }
+                return .permission(tool: tool, detail: detail)
+            }
+        }
+
+        // AskUserQuestion: numbered options
+        var options: [(index: Int, label: String)] = []
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let numStr = trimmed.firstCaptureGroup(of: #"^(\d+)[\.\)]\s+"#),
+               let num = Int(numStr),
+               let rest = trimmed.range(of: #"^\d+[\.\)]\s+"#, options: .regularExpression) {
+                let label = String(trimmed[rest.upperBound...])
+                if !label.isEmpty { options.append((num, label)) }
+            }
+        }
+        if options.count >= 2 { return .question(options: options) }
+
+        return nil
+    }
+}
+
 struct AgentSession: Identifiable, Equatable {
     let id: String
     let pid: Int
@@ -58,6 +109,7 @@ struct AgentSession: Identifiable, Equatable {
     let startedAt: Date
     var status: AgentStatus
     var lastMessage: String = ""
+    var pendingAction: PendingAction?
     var notificationPreview: String?
     var isUnread: Bool = false
 

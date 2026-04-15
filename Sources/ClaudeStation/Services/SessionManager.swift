@@ -37,7 +37,31 @@ final class SessionManager {
     }
 
     func loadOutput(for agent: AgentSession) async -> String {
-        await CmuxService.readScreen(surfaceRef: agent.surfaceRef, lines: 12)
+        await CmuxService.readScreen(workspaceRef: agent.workspaceRef, lines: 15)
+    }
+
+    func approveAgent(_ agent: AgentSession) {
+        Task {
+            await CmuxService.sendText(workspaceRef: agent.workspaceRef, text: "y\n")
+            try? await Task.sleep(for: .seconds(1))
+            await refresh()
+        }
+    }
+
+    func denyAgent(_ agent: AgentSession) {
+        Task {
+            await CmuxService.sendText(workspaceRef: agent.workspaceRef, text: "n\n")
+            try? await Task.sleep(for: .seconds(1))
+            await refresh()
+        }
+    }
+
+    func selectOption(_ agent: AgentSession, option: Int) {
+        Task {
+            await CmuxService.sendText(workspaceRef: agent.workspaceRef, text: "\(option)\n")
+            try? await Task.sleep(for: .seconds(1))
+            await refresh()
+        }
     }
 
     func refresh() async {
@@ -93,19 +117,23 @@ final class SessionManager {
             }
         }
 
-        // Load last messages in parallel
+        // Load screen output and parse actions in parallel
         await withTaskGroup(of: (String, String).self) { group in
             for agent in newAgents {
-                let surfaceRef = agent.surfaceRef
+                let wsRef = agent.workspaceRef
                 let agentId = agent.id
                 group.addTask {
-                    let msg = await CmuxService.readScreen(surfaceRef: surfaceRef, lines: 3)
-                    return (agentId, msg)
+                    let screen = await CmuxService.readScreen(workspaceRef: wsRef, lines: 15)
+                    return (agentId, screen)
                 }
             }
-            for await (id, msg) in group {
+            for await (id, screen) in group {
                 if let idx = newAgents.firstIndex(where: { $0.id == id }) {
-                    newAgents[idx].lastMessage = msg
+                    let lines = screen.components(separatedBy: "\n")
+                    newAgents[idx].lastMessage = lines.suffix(3).joined(separator: "\n")
+                    if newAgents[idx].status == .waiting {
+                        newAgents[idx].pendingAction = PendingAction.parse(from: screen)
+                    }
                 }
             }
         }
