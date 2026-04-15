@@ -5,14 +5,27 @@ struct NotchOverlayView: View {
     @State private var isHovered = false
     var onTap: () -> Void = {}
 
+    private var activeDots: [AgentSession] {
+        manager.agents.filter { $0.status == .running || $0.status == .waiting }
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "cloud.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.8))
 
+            // Always show dots for running/waiting agents
+            if !activeDots.isEmpty {
+                ForEach(activeDots.prefix(8)) { agent in
+                    StatusDot(status: agent.status)
+                }
+            }
+
+            // On hover: also show idle agents + total count
             if isHovered && !manager.agents.isEmpty {
-                ForEach(manager.agents.prefix(8)) { agent in
+                let idleAgents = manager.agents.filter { $0.status == .idle }
+                ForEach(idleAgents.prefix(6)) { agent in
                     StatusDot(status: agent.status)
                 }
 
