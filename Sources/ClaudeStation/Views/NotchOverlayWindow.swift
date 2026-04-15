@@ -5,12 +5,15 @@ final class NotchOverlayWindow: NSPanel {
     private let manager: SessionManager
     private var popover: NSPopover?
     private var screenObserver: Any?
+    private var dragOrigin: NSPoint?
+
+    private static let savedPositionKey = "capsulePosition"
 
     init(manager: SessionManager) {
         self.manager = manager
 
         let screen = NSScreen.main ?? NSScreen.screens.first!
-        let (frame, _) = Self.computeFrame(for: screen)
+        let frame = Self.initialFrame(for: screen)
 
         super.init(
             contentRect: frame,
@@ -28,6 +31,7 @@ final class NotchOverlayWindow: NSPanel {
         acceptsMouseMovedEvents = true
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
+        isMovable = false
 
         let hostView = NSHostingView(
             rootView: NotchOverlayView(onTap: { [weak self] in
@@ -39,52 +43,92 @@ final class NotchOverlayWindow: NSPanel {
         hostView.translatesAutoresizingMaskIntoConstraints = true
         contentView = hostView
 
-        // Reposition when screens change (plug/unplug external display)
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.repositionForCurrentScreen()
+            self?.resetToDefault()
         }
     }
 
     deinit {
-        if let obs = screenObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
+        if let obs = screenObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
-    // nonactivatingPanel: won't bring app to foreground
-    // but canBecomeKey = true: needed for text input in popover
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    // MARK: - Positioning
+    // MARK: - Dragging
 
-    private static func computeFrame(for screen: NSScreen) -> (NSRect, Bool) {
-        let width: CGFloat = 460
-        let height: CGFloat = 90
-        let x = screen.frame.midX - width / 2
-
-        // Check for notch: auxiliaryTopLeftArea exists only on notch displays
-        let hasNotch = screen.auxiliaryTopLeftArea != nil
-        let y: CGFloat
-        if let leftArea = screen.auxiliaryTopLeftArea {
-            // Notch display: position just below notch
-            y = leftArea.origin.y - height - 2
-        } else {
-            // External/no-notch: floating bar at top center, below menu bar
-            y = screen.visibleFrame.maxY - height - 6
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            resetToDefault()
+            return
         }
-
-        return (NSRect(x: x, y: y, width: width, height: height), hasNotch)
+        dragOrigin = event.locationInWindow
     }
 
-    func repositionForCurrentScreen() {
+    override func mouseDragged(with event: NSEvent) {
+        guard let origin = dragOrigin else { return }
+        let current = event.locationInWindow
+        let dx = current.x - origin.x
+        let dy = current.y - origin.y
+        var newOrigin = frame.origin
+        newOrigin.x += dx
+        newOrigin.y += dy
+        setFrameOrigin(newOrigin)
+        savePosition()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragOrigin = nil
+    }
+
+    // MARK: - Position Persistence
+
+    private func savePosition() {
+        let point = frame.origin
+        UserDefaults.standard.set(
+            ["x": point.x, "y": point.y],
+            forKey: Self.savedPositionKey
+        )
+    }
+
+    private static func savedPosition() -> NSPoint? {
+        guard let dict = UserDefaults.standard.dictionary(forKey: savedPositionKey),
+              let x = dict["x"] as? CGFloat,
+              let y = dict["y"] as? CGFloat else { return nil }
+        return NSPoint(x: x, y: y)
+    }
+
+    func resetToDefault() {
+        UserDefaults.standard.removeObject(forKey: Self.savedPositionKey)
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        let (frame, _) = Self.computeFrame(for: screen)
+        let frame = Self.defaultFrame(for: screen)
         setFrame(frame, display: true, animate: true)
-        contentView?.frame = NSRect(origin: .zero, size: frame.size)
+    }
+
+    // MARK: - Frame Calculation
+
+    private static let capsuleWidth: CGFloat = 460
+    private static let capsuleHeight: CGFloat = 90
+
+    private static func defaultFrame(for screen: NSScreen) -> NSRect {
+        let x = screen.frame.midX - capsuleWidth / 2
+        let y: CGFloat
+        if let leftArea = screen.auxiliaryTopLeftArea {
+            y = leftArea.origin.y - capsuleHeight - 2
+        } else {
+            y = screen.visibleFrame.maxY - capsuleHeight - 6
+        }
+        return NSRect(x: x, y: y, width: capsuleWidth, height: capsuleHeight)
+    }
+
+    private static func initialFrame(for screen: NSScreen) -> NSRect {
+        if let saved = savedPosition() {
+            return NSRect(x: saved.x, y: saved.y, width: capsuleWidth, height: capsuleHeight)
+        }
+        return defaultFrame(for: screen)
     }
 
     // MARK: - Popover
@@ -103,7 +147,7 @@ final class NotchOverlayWindow: NSPanel {
             rootView: AgentPopoverView().environment(manager)
         )
         p.behavior = .transient
-        p.contentSize = NSSize(width: 400, height: 450)
+        p.contentSize = NSSize(width: 420, height: 450)
         p.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minY)
         self.popover = p
     }
