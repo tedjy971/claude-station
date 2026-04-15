@@ -99,6 +99,8 @@ struct AgentPopoverView: View {
                         onApprove: { manager.approveAgent(agent) },
                         onDeny: { manager.denyAgent(agent) },
                         onSelectOption: { manager.selectOption(agent, option: $0) },
+                        onSendMessage: { manager.sendMessage($0, to: agent) },
+                        onRefreshOutput: { loadFullOutput(agent) },
                         expandedOutput: expandedAgent == agent.id ? fullOutput : "",
                         loadingOutput: expandedAgent == agent.id && loadingOutput
                     )
@@ -169,10 +171,14 @@ struct AgentCard: View {
     let onApprove: () -> Void
     let onDeny: () -> Void
     let onSelectOption: (Int) -> Void
+    let onSendMessage: (String) -> Void
+    let onRefreshOutput: () -> Void
     let expandedOutput: String
     let loadingOutput: Bool
 
     @State private var isHovered = false
+    @State private var inputText = ""
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -406,32 +412,101 @@ struct AgentCard: View {
         .padding(.horizontal, 12)
     }
 
-    // MARK: - Output
+    // MARK: - Mini Terminal
 
     private var outputSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(DS.cardBorder).frame(height: 1).padding(.horizontal, 12)
 
-            HStack {
+            // Terminal header
+            HStack(spacing: 6) {
+                // Traffic light dots
+                HStack(spacing: 4) {
+                    Circle().fill(DS.red.opacity(0.8)).frame(width: 6, height: 6)
+                    Circle().fill(DS.orange.opacity(0.8)).frame(width: 6, height: 6)
+                    Circle().fill(DS.green.opacity(0.8)).frame(width: 6, height: 6)
+                }
+
                 Text("TERMINAL")
                     .font(.system(size: 9, weight: .bold, design: .rounded))
                     .foregroundStyle(DS.text3)
                     .tracking(1)
+
+                Text(agent.workspace)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(DS.text3)
+
                 Spacer()
+
+                Button(action: onRefreshOutput) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(DS.text3)
+                }
+                .buttonStyle(.plain)
+                .help("Refresh output")
+
                 if loadingOutput {
                     ProgressView().controlSize(.mini)
                 }
             }
-            .padding(.horizontal, 12).padding(.top, 8)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Color.black.opacity(0.3))
 
-            Text(expandedOutput.isEmpty ? "..." : expandedOutput)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(DS.text2).lineLimit(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8).background(DS.codeBg)
-                .clipShape(RoundedRectangle(cornerRadius: DS.r8))
-                .padding(.horizontal, 12).padding(.bottom, 12)
+            // Terminal output
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(expandedOutput.isEmpty ? "..." : expandedOutput)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(DS.text2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .id("output-bottom")
+                }
+                .onChange(of: expandedOutput) { _, _ in
+                    proxy.scrollTo("output-bottom", anchor: .bottom)
+                }
+            }
+            .frame(maxHeight: 180)
+            .padding(8)
+            .background(Color(red: 0.08, green: 0.08, blue: 0.12))
+
+            // Input field
+            HStack(spacing: 6) {
+                Text("❯")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(DS.accent)
+
+                TextField("Send a message...", text: $inputText)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(DS.text1)
+                    .textFieldStyle(.plain)
+                    .focused($inputFocused)
+                    .onSubmit { sendInput() }
+
+                Button(action: sendInput) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(inputText.isEmpty ? DS.text3 : DS.accent)
+                }
+                .buttonStyle(.plain)
+                .disabled(inputText.isEmpty)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(Color(red: 0.06, green: 0.06, blue: 0.10))
+            .overlay(alignment: .top) {
+                Rectangle().fill(DS.cardBorder).frame(height: 1)
+            }
         }
+        .clipShape(RoundedRectangle(cornerRadius: DS.r8))
+        .padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 4)
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func sendInput() {
+        let text = inputText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        inputText = ""
+        onSendMessage(text)
     }
 }

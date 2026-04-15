@@ -38,7 +38,15 @@ final class SessionManager {
     }
 
     func loadOutput(for agent: AgentSession) async -> String {
-        await CmuxService.readScreen(surfaceRef: agent.surfaceRef, lines: 15)
+        await CmuxService.readScreen(surfaceRef: agent.surfaceRef, lines: 30)
+    }
+
+    func sendMessage(_ text: String, to agent: AgentSession) {
+        Task {
+            await CmuxService.sendText(surfaceRef: agent.surfaceRef, text: text + "\n")
+            try? await Task.sleep(for: .seconds(1))
+            await refresh()
+        }
     }
 
     func approveAgent(_ agent: AgentSession) {
