@@ -62,7 +62,26 @@ enum PendingAction: Equatable {
     static func parse(from screen: String) -> PendingAction? {
         let lines = screen.components(separatedBy: "\n")
 
-        // Permission prompt: look for "Allow" near bottom
+        // AskUserQuestion: detect by "Enter to select" marker
+        if lines.contains(where: { $0.contains("Enter to select") }) {
+            var options: [(index: Int, label: String)] = []
+            for line in lines {
+                var cleaned = line.trimmingCharacters(in: .whitespaces)
+                // Remove ❯ prefix (selected item marker)
+                if cleaned.hasPrefix("❯") {
+                    cleaned = String(cleaned.dropFirst()).trimmingCharacters(in: .whitespaces)
+                }
+                if let numStr = cleaned.firstCaptureGroup(of: #"^(\d+)\.\s+"#),
+                   let num = Int(numStr),
+                   let dotRange = cleaned.range(of: #"^\d+\.\s+"#, options: .regularExpression) {
+                    let label = String(cleaned[dotRange.upperBound...])
+                    if !label.isEmpty { options.append((num, label)) }
+                }
+            }
+            if options.count >= 2 { return .question(options: options) }
+        }
+
+        // Permission prompt: look for "Allow"
         for (i, line) in lines.enumerated() {
             if line.contains("Allow") && (line.contains("(y") || line.contains("yes")) {
                 var tool = "Tool"
@@ -79,19 +98,6 @@ enum PendingAction: Equatable {
                 return .permission(tool: tool, detail: detail)
             }
         }
-
-        // AskUserQuestion: numbered options
-        var options: [(index: Int, label: String)] = []
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if let numStr = trimmed.firstCaptureGroup(of: #"^(\d+)[\.\)]\s+"#),
-               let num = Int(numStr),
-               let rest = trimmed.range(of: #"^\d+[\.\)]\s+"#, options: .regularExpression) {
-                let label = String(trimmed[rest.upperBound...])
-                if !label.isEmpty { options.append((num, label)) }
-            }
-        }
-        if options.count >= 2 { return .question(options: options) }
 
         return nil
     }

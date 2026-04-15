@@ -58,7 +58,12 @@ final class SessionManager {
 
     func selectOption(_ agent: AgentSession, option: Int) {
         Task {
-            await CmuxService.sendText(workspaceRef: agent.workspaceRef, text: "\(option)\n")
+            // Navigate: option 1 is selected by default, press down (N-1) times
+            for _ in 1..<option {
+                await CmuxService.sendKey(workspaceRef: agent.workspaceRef, key: "down")
+                try? await Task.sleep(for: .milliseconds(80))
+            }
+            await CmuxService.sendKey(workspaceRef: agent.workspaceRef, key: "enter")
             try? await Task.sleep(for: .seconds(1))
             await refresh()
         }
@@ -117,13 +122,42 @@ final class SessionManager {
             }
         }
 
-        // Load screen output and parse actions in parallel
+        // Assign unmatched "Waiting" notifications FIRST (before screen parse)
+        var unmatchedWaitingCount = notifications.enumerated().filter { idx, notif in
+            notif.needsAttention && !matchedNotifications.contains(idx)
+        }.count
+
+        if unmatchedWaitingCount > 0 {
+            for i in newAgents.indices where unmatchedWaitingCount > 0 {
+                let isSelected = workspaces.first(where: { $0.ref == newAgents[i].workspaceRef })?.isSelected ?? false
+                if isSelected && newAgents[i].status != .completed && newAgents[i].status != .waiting {
+                    newAgents[i].status = .waiting
+                    unmatchedWaitingCount -= 1
+                }
+            }
+            for i in newAgents.indices where unmatchedWaitingCount > 0 {
+                if newAgents[i].status == .running {
+                    newAgents[i].status = .waiting
+                    unmatchedWaitingCount -= 1
+                }
+            }
+            for i in newAgents.indices where unmatchedWaitingCount > 0 {
+                if newAgents[i].status == .idle {
+                    newAgents[i].status = .waiting
+                    unmatchedWaitingCount -= 1
+                }
+            }
+        }
+
+        let hasUnmatched = unmatchedWaitingCount > 0
+
+        // NOW load screen output and parse actions for waiting agents
         await withTaskGroup(of: (String, String).self) { group in
             for agent in newAgents {
                 let wsRef = agent.workspaceRef
                 let agentId = agent.id
                 group.addTask {
-                    let screen = await CmuxService.readScreen(workspaceRef: wsRef, lines: 15)
+                    let screen = await CmuxService.readScreen(workspaceRef: wsRef, lines: 30)
                     return (agentId, screen)
                 }
             }
@@ -137,39 +171,6 @@ final class SessionManager {
                 }
             }
         }
-
-        // Assign unmatched "Waiting" notifications to agents
-        // (cmux "Waiting" notifications don't include workspace name)
-        var unmatchedWaitingCount = notifications.enumerated().filter { idx, notif in
-            notif.needsAttention && !matchedNotifications.contains(idx)
-        }.count
-
-        if unmatchedWaitingCount > 0 {
-            // Priority 1: agent in the currently selected workspace
-            for i in newAgents.indices where unmatchedWaitingCount > 0 {
-                let isSelected = workspaces.first(where: { $0.ref == newAgents[i].workspaceRef })?.isSelected ?? false
-                if isSelected && newAgents[i].status != .completed && newAgents[i].status != .waiting {
-                    newAgents[i].status = .waiting
-                    unmatchedWaitingCount -= 1
-                }
-            }
-            // Priority 2: any running agent
-            for i in newAgents.indices where unmatchedWaitingCount > 0 {
-                if newAgents[i].status == .running {
-                    newAgents[i].status = .waiting
-                    unmatchedWaitingCount -= 1
-                }
-            }
-            // Priority 3: any idle agent
-            for i in newAgents.indices where unmatchedWaitingCount > 0 {
-                if newAgents[i].status == .idle {
-                    newAgents[i].status = .waiting
-                    unmatchedWaitingCount -= 1
-                }
-            }
-        }
-
-        let hasUnmatched = unmatchedWaitingCount > 0
 
         newAgents.sort { $0.status < $1.status }
         agents = newAgents

@@ -100,6 +100,13 @@ enum CmuxService {
         )
     }
 
+    static func sendKey(workspaceRef: String, key: String) async {
+        _ = await ShellExecutor.runArgs(
+            executable: cmuxPath,
+            args: ["send-key", "--workspace", workspaceRef, key]
+        )
+    }
+
     // MARK: - Tree Parsing
 
     private static func parseTree(_ output: String) -> [WorkspaceInfo] {
