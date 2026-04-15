@@ -155,39 +155,46 @@ final class NotchOverlayWindow: NSPanel {
     }
 
     // The capsule visual is ~200x34, centered in a 460x90 window.
-    // Offset the window so the CAPSULE (not the window) is at the edge.
     private static let hInset: CGFloat = 130  // (460-200)/2
     private static let vInset: CGFloat = 28   // (90-34)/2
 
     private static func frameForZone(_ zone: SnapZone, screen: NSScreen) -> NSRect {
         let w = capsuleWidth
         let h = capsuleHeight
-        let scr = screen.visibleFrame
+        let vis = screen.visibleFrame
 
         let x: CGFloat
         let y: CGFloat
 
         switch zone {
-        case .topLeft:      x = scr.minX - hInset; y = topY(screen: screen)
-        case .topCenter:    x = screen.frame.midX - w / 2; y = topY(screen: screen)
-        case .topRight:     x = scr.maxX - w + hInset; y = topY(screen: screen)
-        case .left:         x = scr.minX - hInset; y = scr.midY - h / 2
-        case .center:       x = scr.midX - w / 2; y = scr.midY - h / 2
-        case .right:        x = scr.maxX - w + hInset; y = scr.midY - h / 2
-        case .bottomLeft:   x = scr.minX - hInset; y = scr.minY - vInset
-        case .bottomCenter: x = scr.midX - w / 2; y = scr.minY - vInset
-        case .bottomRight:  x = scr.maxX - w + hInset; y = scr.minY - vInset
+        // Top row: capsule touching notch bottom / menu bar bottom
+        case .topLeft:
+            x = vis.minX - hInset
+            y = vis.maxY - h + vInset
+        case .topCenter:
+            x = screen.frame.midX - w / 2
+            // Notch display: capsule extends DOWN from notch (touching it)
+            if let leftArea = screen.auxiliaryTopLeftArea {
+                y = leftArea.origin.y - h + vInset
+            } else {
+                y = vis.maxY - h + vInset
+            }
+        case .topRight:
+            x = vis.maxX - w + hInset
+            y = vis.maxY - h + vInset
+
+        // Middle row
+        case .left:    x = vis.minX - hInset; y = vis.midY - h / 2
+        case .center:  x = vis.midX - w / 2; y = vis.midY - h / 2
+        case .right:   x = vis.maxX - w + hInset; y = vis.midY - h / 2
+
+        // Bottom row: capsule flush with screen bottom
+        case .bottomLeft:   x = vis.minX - hInset; y = vis.minY - vInset
+        case .bottomCenter: x = vis.midX - w / 2; y = vis.minY - vInset
+        case .bottomRight:  x = vis.maxX - w + hInset; y = vis.minY - vInset
         }
 
         return NSRect(x: x, y: y, width: w, height: h)
-    }
-
-    private static func topY(screen: NSScreen) -> CGFloat {
-        if let leftArea = screen.auxiliaryTopLeftArea {
-            // Position INSIDE the notch area (flush with menu bar top)
-            return leftArea.origin.y - vInset
-        }
-        return screen.visibleFrame.maxY - capsuleHeight + vInset
     }
 
     private func nearestZone(to point: NSPoint) -> SnapZone {
