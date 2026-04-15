@@ -32,7 +32,7 @@ final class NotchOverlayWindow: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
-        level = .statusBar
+        level = .popUpMenu
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         hasShadow = false
         ignoresMouseEvents = false
@@ -173,10 +173,10 @@ final class NotchOverlayWindow: NSPanel {
             y = vis.maxY - h + vInset
         case .topCenter:
             x = screen.frame.midX - w / 2
-            // Notch display: capsule IN the menu bar, centered on notch
+            // Notch display: capsule BELOW notch, top edge touching notch bottom
+            // Capsule visual top = window_y + h - vInset → set this to notch bottom
             if let leftArea = screen.auxiliaryTopLeftArea {
-                let menuBarCenterY = leftArea.origin.y + leftArea.height / 2
-                y = menuBarCenterY - h / 2
+                y = leftArea.origin.y - h + vInset
             } else {
                 y = vis.maxY - h + vInset
             }

@@ -46,8 +46,8 @@ struct NotchOverlayView: View {
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .padding(.horizontal, isHovered ? 16 : 12)
-        .padding(.vertical, isHovered ? 8 : 6)
+        .padding(.horizontal, isHovered ? 20 : 16)
+        .padding(.vertical, isHovered ? 10 : 8)
         .background {
             Capsule()
                 .fill(Color.black)
