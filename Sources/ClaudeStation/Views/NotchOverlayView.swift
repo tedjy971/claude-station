@@ -2,45 +2,44 @@ import SwiftUI
 
 struct NotchOverlayView: View {
     @Environment(SessionManager.self) private var manager
+    @State private var isHovered = false
     var onTap: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 6) {
-            if manager.activeAgents.isEmpty && !manager.agents.isEmpty {
-                Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.5))
-                Text("\(manager.agents.count) idle")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-            } else if manager.agents.isEmpty {
-                Image(systemName: "cloud")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.4))
-            } else {
-                ForEach(manager.activeAgents.prefix(8)) { agent in
+            Image(systemName: "cloud.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.8))
+
+            if isHovered && !manager.agents.isEmpty {
+                ForEach(manager.agents.prefix(8)) { agent in
                     StatusDot(status: agent.status)
                 }
-                if manager.activeAgents.count > 8 {
-                    Text("+\(manager.activeAgents.count - 8)")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.7))
-                }
+
+                Text("\(manager.agents.count)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.8))
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, isHovered ? 14 : 10)
         .padding(.vertical, 7)
         .background {
             Capsule()
-                .fill(.black.opacity(0.8))
+                .fill(.black.opacity(0.85))
                 .overlay {
                     Capsule()
                         .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
                 }
         }
+        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         .contentShape(Capsule())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
         .onTapGesture { onTap() }
-        .animation(.easeInOut(duration: 0.3), value: manager.agents.count)
+        .animation(.spring(duration: 0.3), value: manager.agents.count)
     }
 }
 

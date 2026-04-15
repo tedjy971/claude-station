@@ -32,31 +32,25 @@ final class SessionManager {
     }
 
     func navigateToAgent(_ agent: AgentSession) {
-        Task {
-            await CmuxService.selectWorkspace(ref: agent.workspaceRef)
-        }
+        Task { await CmuxService.selectWorkspace(ref: agent.workspaceRef) }
     }
 
     func loadOutput(for agent: AgentSession) async -> String {
-        await CmuxService.readScreen(surfaceRef: agent.surfaceRef, lines: 8)
+        await CmuxService.readScreen(surfaceRef: agent.surfaceRef, lines: 12)
     }
 
     func refresh() async {
-        // Primary source: cmux tree (only shows real Claude surfaces)
         async let workspacesResult = CmuxService.fetchWorkspaces()
         async let notificationsResult = CmuxService.fetchNotifications()
 
         let workspaces = await workspacesResult
         let notifications = await notificationsResult
 
-        // Build map: TTY → session file data (for startedAt)
         let sessionFiles = readSessionFiles()
         let ttyMap = await fetchTTYMap(for: sessionFiles.map(\.pid))
         var ttyToSession: [String: SessionFile] = [:]
         for session in sessionFiles {
-            if let tty = ttyMap[session.pid] {
-                ttyToSession[tty] = session
-            }
+            if let tty = ttyMap[session.pid] { ttyToSession[tty] = session }
         }
 
         var newAgents: [AgentSession] = []
@@ -65,43 +59,49 @@ final class SessionManager {
         for ws in workspaces {
             for surface in ws.surfaces where surface.claudeStatus != .none {
                 var status: AgentStatus = surface.claudeStatus == .running ? .running : .idle
-
-                // Enrich with session file data
                 let session = surface.tty.flatMap { ttyToSession[$0] }
-                let startedAt = session?.startedAt ?? Date()
-                let cwd = session?.cwd ?? ""
-                let sessionId = session?.sessionId ?? surface.ref
-                let pid = session?.pid ?? 0
 
-                // Check notifications for this workspace
                 for (idx, notif) in notifications.enumerated() {
-                    if notif.isWaiting {
-                        if let hint = notif.workspaceHint,
-                           hint.localizedCaseInsensitiveCompare(ws.name) == .orderedSame {
-                            status = .waiting
-                            matchedNotifications.insert(idx)
-                        }
-                    } else if notif.isCompleted {
-                        if let hint = notif.workspaceHint,
-                           hint.localizedCaseInsensitiveCompare(ws.name) == .orderedSame {
-                            status = .completed
-                            matchedNotifications.insert(idx)
-                        }
+                    if notif.isWaiting, let hint = notif.workspaceHint,
+                       hint.localizedCaseInsensitiveCompare(ws.name) == .orderedSame {
+                        status = .waiting
+                        matchedNotifications.insert(idx)
+                    } else if notif.isCompleted, let hint = notif.workspaceHint,
+                              hint.localizedCaseInsensitiveCompare(ws.name) == .orderedSame {
+                        status = .completed
+                        matchedNotifications.insert(idx)
                     }
                 }
 
                 newAgents.append(AgentSession(
-                    id: sessionId,
-                    pid: pid,
-                    sessionId: sessionId,
+                    id: session?.sessionId ?? surface.ref,
+                    pid: session?.pid ?? 0,
+                    sessionId: session?.sessionId ?? surface.ref,
                     workspace: ws.name,
                     workspaceRef: ws.ref,
                     surfaceRef: surface.ref,
                     task: surface.claudeTaskName ?? "",
-                    cwd: cwd,
-                    startedAt: startedAt,
+                    cwd: session?.cwd ?? "",
+                    startedAt: session?.startedAt ?? Date(),
                     status: status
                 ))
+            }
+        }
+
+        // Load last messages in parallel
+        await withTaskGroup(of: (String, String).self) { group in
+            for agent in newAgents {
+                let surfaceRef = agent.surfaceRef
+                let agentId = agent.id
+                group.addTask {
+                    let msg = await CmuxService.readScreen(surfaceRef: surfaceRef, lines: 3)
+                    return (agentId, msg)
+                }
+            }
+            for await (id, msg) in group {
+                if let idx = newAgents.firstIndex(where: { $0.id == id }) {
+                    newAgents[idx].lastMessage = msg
+                }
             }
         }
 
@@ -139,8 +139,6 @@ final class SessionManager {
         }
     }
 
-    // MARK: - Session Files
-
     private struct SessionFile {
         let pid: Int
         let sessionId: String
@@ -151,7 +149,6 @@ final class SessionManager {
     private func readSessionFiles() -> [SessionFile] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(atPath: sessionsPath) else { return [] }
-
         return files.compactMap { file -> SessionFile? in
             guard file.hasSuffix(".json") else { return nil }
             let path = (sessionsPath as NSString).appendingPathComponent(file)
@@ -161,33 +158,21 @@ final class SessionManager {
                   let sessionId = json["sessionId"] as? String,
                   let cwd = json["cwd"] as? String,
                   let startedAtMs = json["startedAt"] as? Double else { return nil }
-
-            return SessionFile(
-                pid: pid,
-                sessionId: sessionId,
-                cwd: cwd,
-                startedAt: Date(timeIntervalSince1970: startedAtMs / 1000)
-            )
+            return SessionFile(pid: pid, sessionId: sessionId, cwd: cwd,
+                             startedAt: Date(timeIntervalSince1970: startedAtMs / 1000))
         }
     }
-
-    // MARK: - File Monitoring
 
     private func startFileMonitor() {
         let fd = open(sessionsPath, O_EVTONLY)
         guard fd >= 0 else { return }
-
         let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .delete, .rename],
-            queue: .main
+            fileDescriptor: fd, eventMask: [.write, .delete, .rename], queue: .main
         )
-
         source.setEventHandler { [weak self] in
             guard let self else { return }
             Task { @MainActor in await self.refresh() }
         }
-
         source.setCancelHandler { close(fd) }
         source.resume()
         fileMonitor = source

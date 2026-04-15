@@ -23,10 +23,10 @@ enum AgentStatus: Int, Comparable {
 
     var label: String {
         switch self {
-        case .waiting: "Waiting for input"
+        case .waiting: "Waiting"
         case .running: "Running"
         case .idle: "Idle"
-        case .completed: "Completed"
+        case .completed: "Done"
         case .unknown: "Unknown"
         }
     }
@@ -57,6 +57,7 @@ struct AgentSession: Identifiable, Equatable {
     var cwd: String
     let startedAt: Date
     var status: AgentStatus
+    var lastMessage: String = ""
     var notificationPreview: String?
     var isUnread: Bool = false
 

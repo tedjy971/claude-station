@@ -13,10 +13,19 @@ final class NotchOverlayWindow: NSWindow {
             return
         }
 
-        let width: CGFloat = 280
-        let height: CGFloat = 34
+        // Position precisely below the notch
+        // Use auxiliaryTopLeftArea to find exact notch bottom edge
+        let notchBottomY: CGFloat
+        if let leftArea = screen.auxiliaryTopLeftArea {
+            notchBottomY = leftArea.origin.y
+        } else {
+            notchBottomY = screen.visibleFrame.maxY
+        }
+
+        let width: CGFloat = 340
+        let height: CGFloat = 40
         let x = screen.frame.midX - width / 2
-        let y = screen.visibleFrame.maxY - height - 4
+        let y = notchBottomY - height - 2
 
         super.init(
             contentRect: NSRect(x: x, y: y, width: width, height: height),
@@ -29,14 +38,16 @@ final class NotchOverlayWindow: NSWindow {
         backgroundColor = .clear
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        hasShadow = true
+        hasShadow = false
         ignoresMouseEvents = false
+        acceptsMouseMovedEvents = true
 
         let hostView = NSHostingView(
             rootView: NotchOverlayView(onTap: { [weak self] in
                 self?.togglePopover()
             }).environment(manager)
         )
+        hostView.frame = NSRect(x: 0, y: 0, width: width, height: height)
         contentView = hostView
     }
 
@@ -53,12 +64,11 @@ final class NotchOverlayWindow: NSWindow {
         guard let contentView else { return }
 
         let p = NSPopover()
-        let controller = NSHostingController(
+        p.contentViewController = NSHostingController(
             rootView: AgentPopoverView().environment(manager)
         )
-        p.contentViewController = controller
         p.behavior = .transient
-        p.contentSize = NSSize(width: 380, height: 400)
+        p.contentSize = NSSize(width: 400, height: 450)
         p.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minY)
         self.popover = p
     }
